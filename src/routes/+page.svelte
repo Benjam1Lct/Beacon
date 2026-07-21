@@ -204,19 +204,20 @@
   }
 </script>
 
-<main>
-  <div class="shell">
-    <header>
-      <span class="brand-icon"><Icon name="beacon" size={30} /></span>
-      <div>
-        <h1>Beacon</h1>
-        <p class="tagline">Pilote ton serveur — VPS ou machine locale.</p>
-      </div>
-    </header>
+{#if view === "dashboard" && activeProfile}
+  <Dashboard profile={activeProfile} password={activePassword} onBack={backToList} />
+{:else}
+  <main>
+    <div class="shell">
+      <header>
+        <span class="brand-icon"><Icon name="beacon" size={30} /></span>
+        <div>
+          <h1>Beacon</h1>
+          <p class="tagline">Pilote ton serveur — VPS ou machine locale.</p>
+        </div>
+      </header>
 
-    {#if view === "dashboard" && activeProfile}
-      <Dashboard profile={activeProfile} password={activePassword} onBack={backToList} />
-    {:else if view === "list"}
+      {#if view === "list"}
       <section class="panel">
         <div class="panel-head">
           <h2>Mes serveurs</h2>
@@ -429,11 +430,12 @@
       </section>
     {/if}
 
-    <p class="privacy">
-      <Icon name="lock" size={13} /> 100 % local — aucune donnée ne quitte ta machine, hors la connexion à ton serveur.
-    </p>
-  </div>
-</main>
+      <p class="privacy">
+        <Icon name="lock" size={13} /> 100 % local — aucune donnée ne quitte ta machine, hors la connexion à ton serveur.
+      </p>
+    </div>
+  </main>
+{/if}
 
 <style>
   :global(*) {
