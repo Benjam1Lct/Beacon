@@ -10,8 +10,12 @@
 
   const clamped = $derived(Math.max(0, Math.min(100, value)));
   const offset = $derived(CIRC * (1 - clamped / 100));
-  // Monochrome : anneau blanc, seul le seuil critique (>=90%) passe en rouge.
-  const color = $derived(clamped >= 90 ? "#ff6b6b" : "#ffffff");
+  // Vert façon ZimaOS, rouge au seuil critique (>=90%).
+  const color = $derived(clamped >= 90 ? "#f87171" : "#22c55e");
+  // Point indicateur à l'extrémité de l'arc.
+  const dotAngle = $derived(((-90 + (clamped / 100) * 360) * Math.PI) / 180);
+  const dotX = $derived(50 + R * Math.cos(dotAngle));
+  const dotY = $derived(50 + R * Math.sin(dotAngle));
 </script>
 
 <div class="gauge">
@@ -25,6 +29,7 @@
       transform="rotate(-90 50 50)"
       style="stroke:{color};stroke-dasharray:{CIRC};stroke-dashoffset:{offset}"
     />
+    <circle class="dot" cx={dotX} cy={dotY} r="4.5" style="fill:{color}" />
     <text class="val" x="50" y="47">{Math.round(clamped)}<tspan class="pct">%</tspan></text>
     <text class="lbl" x="50" y="64">{label}</text>
   </svg>
@@ -52,6 +57,9 @@
     stroke-width: 9;
     stroke-linecap: round;
     transition: stroke-dashoffset 0.6s ease, stroke 0.4s ease;
+  }
+  .dot {
+    transition: cx 0.6s ease, cy 0.6s ease, fill 0.4s ease;
   }
   .val {
     fill: #f2f5fa;

@@ -4,6 +4,7 @@
   import { quintOut } from "svelte/easing";
   import Gauge from "$lib/Gauge.svelte";
   import Icon from "$lib/Icon.svelte";
+  import HddImage from "$lib/HddImage.svelte";
   import { fetchMetrics } from "$lib/api";
   import type { Metrics, ProfileMeta } from "$lib/types";
 
@@ -44,6 +45,7 @@
     const step = 100 / (spark.length - 1);
     return spark.map((v, i) => `${(i * step).toFixed(1)},${(28 - (v / max) * 26).toFixed(1)}`).join(" ");
   });
+  const sparkArea = $derived(sparkPoints ? `M0,30 L${sparkPoints.replace(/ /g, " L")} L100,30 Z` : "");
 
   function fmtBytes(b: number): string {
     const u = ["o", "Ko", "Mo", "Go", "To"];
@@ -100,12 +102,12 @@
   });
 
   const APPS = [
-    { icon: "apps", label: "App Store" },
-    { icon: "folder", label: "Fichiers" },
-    { icon: "terminal", label: "Terminal" },
-    { icon: "server", label: "Conteneurs" },
-    { icon: "link", label: "Réseau" },
-    { icon: "settings", label: "Réglages" },
+    { icon: "apps", label: "App Store", grad: "linear-gradient(155deg,#4f93ff,#2563eb)" },
+    { icon: "folder", label: "Fichiers", grad: "linear-gradient(155deg,#38bdf8,#0284c7)" },
+    { icon: "terminal", label: "Terminal", grad: "linear-gradient(155deg,#4b5563,#1f2937)" },
+    { icon: "server", label: "Conteneurs", grad: "linear-gradient(155deg,#2dd4bf,#0d9488)" },
+    { icon: "link", label: "Réseau", grad: "linear-gradient(155deg,#a78bfa,#7c3aed)" },
+    { icon: "settings", label: "Réglages", grad: "linear-gradient(155deg,#94a3b8,#475569)" },
   ];
 </script>
 
@@ -146,14 +148,17 @@
 
     <!-- Stockage -->
     <div class="w" in:fly={{ x: -16, duration: 420, delay: 140, easing: quintOut }}>
-      <div class="w-head"><span>Stockage</span><Icon name="hdd" size={16} /></div>
+      <div class="w-head"><span>Stockage</span></div>
       {#if metrics}
         <div class="storage">
-          <div class="storage-row">
-            <span class="badge-ok">Sain</span>
-            <span class="storage-txt">
-              {fmtBytes(metrics.diskUsedBytes)} / {fmtBytes(metrics.diskTotalBytes)}
-            </span>
+          <div class="storage-top">
+            <HddImage size={52} />
+            <div class="storage-meta">
+              <span class="badge-ok">Sain</span>
+              <span class="storage-txt">
+                {fmtBytes(metrics.diskUsedBytes)} <em>/ {fmtBytes(metrics.diskTotalBytes)}</em>
+              </span>
+            </div>
           </div>
           <div class="bar"><div class="bar-fill" style="width:{Math.min(100, diskPercent)}%"></div></div>
         </div>
@@ -164,10 +169,19 @@
 
     <!-- Réseau -->
     <div class="w" in:fly={{ x: -16, duration: 420, delay: 210, easing: quintOut }}>
-      <div class="w-head"><span>Réseau</span><span class="iface">{metrics ? "eth" : ""}</span></div>
+      <div class="w-head"><span>Réseau</span><span class="iface">eth0</span></div>
       <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none">
-        {#if sparkPoints}
-          <polyline points={sparkPoints} fill="none" stroke="#ffffff" stroke-width="1.6" />
+        <defs>
+          <linearGradient id="net-area" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#2dd4bf" stop-opacity="0.45" />
+            <stop offset="1" stop-color="#2dd4bf" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+        <line x1="0" y1="10" x2="100" y2="10" class="grid" />
+        <line x1="0" y1="20" x2="100" y2="20" class="grid" />
+        {#if sparkArea}
+          <path d={sparkArea} fill="url(#net-area)" />
+          <polyline points={sparkPoints} fill="none" stroke="#2dd4bf" stroke-width="1.4" />
         {/if}
       </svg>
       <div class="net-rates">
@@ -229,7 +243,7 @@
               title="Bientôt disponible"
               in:fly={{ y: 16, duration: 340, delay: i * 45, easing: quintOut }}
             >
-              <span class="tile-icon"><Icon name={app.icon} size={26} /></span>
+              <span class="tile-icon" style="background:{app.grad}"><Icon name={app.icon} size={28} /></span>
               <span class="tile-label">{app.label}</span>
             </button>
           {/each}
@@ -351,23 +365,33 @@
     color: #8695b3;
   }
 
-  .storage-row {
+  .storage-top {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.6rem;
+    gap: 0.75rem;
+    margin-bottom: 0.7rem;
+  }
+  .storage-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
   }
   .badge-ok {
+    align-self: flex-start;
     font-size: 0.72rem;
-    color: #fff;
-    background: rgba(255, 255, 255, 0.12);
+    color: #34d399;
+    background: rgba(52, 211, 153, 0.15);
     padding: 0.15rem 0.5rem;
     border-radius: 6px;
     font-weight: 600;
   }
   .storage-txt {
-    font-size: 0.8rem;
-    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.86rem;
+    color: #fff;
+  }
+  .storage-txt em {
+    font-style: normal;
+    color: rgba(255, 255, 255, 0.5);
   }
   .bar {
     height: 7px;
@@ -384,8 +408,12 @@
 
   .spark {
     width: 100%;
-    height: 34px;
+    height: 42px;
     display: block;
+  }
+  .grid {
+    stroke: rgba(255, 255, 255, 0.06);
+    stroke-width: 0.5;
   }
   .iface {
     color: #7d88a3;
@@ -393,15 +421,20 @@
   }
   .net-rates {
     display: flex;
-    justify-content: space-between;
-    margin-top: 0.3rem;
+    justify-content: flex-start;
+    gap: 1.1rem;
+    margin-top: 0.4rem;
     font-size: 0.78rem;
-  }
-  .net-rates .up {
-    color: rgba(255, 255, 255, 0.65);
-  }
-  .net-rates .down {
     color: #fff;
+  }
+  .net-rates .up,
+  .net-rates .down {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .net-rates :global(svg) {
+    color: #34d399;
   }
   .net-rates .up :global(svg) {
     transform: rotate(-90deg);
