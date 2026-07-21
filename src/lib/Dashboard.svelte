@@ -5,6 +5,7 @@
   import Gauge from "$lib/Gauge.svelte";
   import Icon from "$lib/Icon.svelte";
   import HddImage from "$lib/HddImage.svelte";
+  import AppIcon from "$lib/AppIcon.svelte";
   import Containers from "$lib/Containers.svelte";
   import { fetchMetrics } from "$lib/api";
   import type { Metrics, ProfileMeta } from "$lib/types";
@@ -22,7 +23,8 @@
   let prevNet: { rx: number; tx: number; t: number } | null = null;
   let rxRate = $state(0);
   let txRate = $state(0);
-  let spark = $state<number[]>([]);
+  let netUp = $state<number[]>([]);
+  let netDown = $state<number[]>([]);
 
   let clock = $state(new Date());
 
@@ -40,13 +42,30 @@
       : 0,
   );
 
-  const sparkPoints = $derived.by(() => {
-    if (spark.length < 2) return "";
-    const max = Math.max(...spark, 1);
-    const step = 100 / (spark.length - 1);
-    return spark.map((v, i) => `${(i * step).toFixed(1)},${(28 - (v / max) * 26).toFixed(1)}`).join(" ");
-  });
-  const sparkArea = $derived(sparkPoints ? `M0,30 L${sparkPoints.replace(/ /g, " L")} L100,30 Z` : "");
+  // Courbe lisse (spline Catmull-Rom -> Bézier) : renvoie ligne + aire remplie.
+  function smooth(vals: number[], max: number): { line: string; area: string } {
+    const n = vals.length;
+    if (n < 2) return { line: "", area: "" };
+    const step = 100 / (n - 1);
+    const p = vals.map((v, i) => [i * step, 28 - (v / Math.max(max, 1)) * 25] as [number, number]);
+    let d = `M${p[0][0].toFixed(2)},${p[0][1].toFixed(2)}`;
+    for (let i = 0; i < n - 1; i++) {
+      const p0 = p[i - 1] ?? p[i];
+      const p1 = p[i];
+      const p2 = p[i + 1];
+      const p3 = p[i + 2] ?? p2;
+      const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+      const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+      const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+      const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+      d += ` C${c1x.toFixed(2)},${c1y.toFixed(2)} ${c2x.toFixed(2)},${c2y.toFixed(2)} ${p2[0].toFixed(2)},${p2[1].toFixed(2)}`;
+    }
+    return { line: d, area: `${d} L100,30 L0,30 Z` };
+  }
+
+  const netMax = $derived(Math.max(1, ...netUp, ...netDown));
+  const upCurve = $derived(smooth(netUp, netMax));
+  const downCurve = $derived(smooth(netDown, netMax));
 
   function fmtBytes(b: number): string {
     const u = ["o", "Ko", "Mo", "Go", "To"];
@@ -79,7 +98,8 @@
         if (dt > 0) {
           rxRate = Math.max(0, (m.netRxBytes - prevNet.rx) / dt);
           txRate = Math.max(0, (m.netTxBytes - prevNet.tx) / dt);
-          spark = [...spark, rxRate + txRate].slice(-24);
+          netDown = [...netDown, rxRate].slice(-24);
+          netUp = [...netUp, txRate].slice(-24);
         }
       }
       prevNet = { rx: m.netRxBytes, tx: m.netTxBytes, t: now };
@@ -103,12 +123,12 @@
   });
 
   const APPS = [
-    { icon: "apps", label: "App Store", grad: "linear-gradient(155deg,#4f93ff,#2563eb)" },
-    { icon: "folder", label: "Fichiers", grad: "linear-gradient(155deg,#38bdf8,#0284c7)" },
-    { icon: "terminal", label: "Terminal", grad: "linear-gradient(155deg,#4b5563,#1f2937)" },
-    { icon: "server", label: "Conteneurs", grad: "linear-gradient(155deg,#2dd4bf,#0d9488)" },
-    { icon: "link", label: "Réseau", grad: "linear-gradient(155deg,#a78bfa,#7c3aed)" },
-    { icon: "settings", label: "Réglages", grad: "linear-gradient(155deg,#94a3b8,#475569)" },
+    { key: "appstore", label: "App Store" },
+    { key: "files", label: "Fichiers" },
+    { key: "terminal", label: "Terminal" },
+    { key: "containers", label: "Conteneurs" },
+    { key: "network", label: "Réseau" },
+    { key: "settings", label: "Réglages" },
   ];
 </script>
 
@@ -173,16 +193,22 @@
       <div class="w-head"><span>Réseau</span><span class="iface">eth0</span></div>
       <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none">
         <defs>
-          <linearGradient id="net-area" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#2dd4bf" stop-opacity="0.45" />
+          <linearGradient id="net-down" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#2dd4bf" stop-opacity="0.4" />
             <stop offset="1" stop-color="#2dd4bf" stop-opacity="0" />
+          </linearGradient>
+          <linearGradient id="net-up" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#4ade80" stop-opacity="0.32" />
+            <stop offset="1" stop-color="#4ade80" stop-opacity="0" />
           </linearGradient>
         </defs>
         <line x1="0" y1="10" x2="100" y2="10" class="grid" />
         <line x1="0" y1="20" x2="100" y2="20" class="grid" />
-        {#if sparkArea}
-          <path d={sparkArea} fill="url(#net-area)" />
-          <polyline points={sparkPoints} fill="none" stroke="#2dd4bf" stroke-width="1.4" />
+        {#if netDown.length > 1}
+          <path d={downCurve.area} fill="url(#net-down)" />
+          <path d={downCurve.line} fill="none" stroke="#2dd4bf" stroke-width="1.3" />
+          <path d={upCurve.area} fill="url(#net-up)" />
+          <path d={upCurve.line} fill="none" stroke="#4ade80" stroke-width="1.3" />
         {/if}
       </svg>
       <div class="net-rates">
@@ -246,7 +272,7 @@
               title="Bientôt disponible"
               in:fly={{ y: 16, duration: 340, delay: i * 45, easing: quintOut }}
             >
-              <span class="tile-icon" style="background:{app.grad}"><Icon name={app.icon} size={28} /></span>
+              <span class="tile-icon"><AppIcon name={app.key} size={60} /></span>
               <span class="tile-label">{app.label}</span>
             </button>
           {/each}
@@ -436,13 +462,12 @@
     align-items: center;
     gap: 0.25rem;
   }
-  .net-rates :global(svg) {
-    color: #34d399;
-  }
   .net-rates .up :global(svg) {
+    color: #4ade80;
     transform: rotate(-90deg);
   }
   .net-rates .down :global(svg) {
+    color: #2dd4bf;
     transform: rotate(90deg);
   }
   .left-foot {
@@ -591,22 +616,10 @@
   .tile-icon {
     display: grid;
     place-items: center;
-    width: 64px;
-    height: 64px;
-    border-radius: 18px;
-    color: #fff;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
-    transition:
-      transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
-      background 0.22s ease,
-      border-color 0.22s ease;
+    transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
   }
   .tile:hover .tile-icon {
-    transform: translateY(-3px) scale(1.04);
-    background: rgba(255, 255, 255, 0.13);
-    border-color: rgba(255, 255, 255, 0.22);
+    transform: translateY(-3px) scale(1.05);
   }
   .tile:active .tile-icon {
     transform: translateY(-1px) scale(0.99);
