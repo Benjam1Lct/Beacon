@@ -289,10 +289,12 @@
   }
 
   .w {
-    background: rgba(255, 255, 255, 0.035);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(22, 22, 24, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 16px;
     padding: 0.9rem 1rem;
+    backdrop-filter: blur(22px) saturate(1.1);
+    -webkit-backdrop-filter: blur(22px) saturate(1.1);
   }
   .w-head {
     display: flex;
@@ -426,9 +428,11 @@
     gap: 0.6rem;
     padding: 0.7rem 1rem;
     border-radius: 12px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.07);
+    background: rgba(22, 22, 24, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     color: #7d88a3;
+    backdrop-filter: blur(20px) saturate(1.1);
+    -webkit-backdrop-filter: blur(20px) saturate(1.1);
   }
   .searchbar input {
     flex: 1;
@@ -446,9 +450,11 @@
     color: #8695b3;
     padding: 0.45rem 0.85rem;
     border-radius: 20px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(22, 22, 24, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     white-space: nowrap;
+    backdrop-filter: blur(20px) saturate(1.1);
+    -webkit-backdrop-filter: blur(20px) saturate(1.1);
   }
   .live .dot {
     width: 8px;
@@ -467,9 +473,11 @@
     gap: 0.9rem;
     padding: 1.1rem 1.2rem;
     border-radius: 16px;
-    background: rgba(255, 255, 255, 0.035);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(22, 22, 24, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     margin-bottom: 1.6rem;
+    backdrop-filter: blur(22px) saturate(1.1);
+    -webkit-backdrop-filter: blur(22px) saturate(1.1);
   }
   .hero-icon {
     display: grid;
@@ -534,9 +542,11 @@
     height: 64px;
     border-radius: 18px;
     color: #fff;
-    background: rgba(255, 255, 255, 0.07);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(30, 30, 33, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(18px) saturate(1.1);
+    -webkit-backdrop-filter: blur(18px) saturate(1.1);
     transition:
       transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
       background 0.22s ease,
