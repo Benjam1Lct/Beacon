@@ -24,11 +24,61 @@
   let folders = $state<Folder[]>([]);
   let assign = $state<Record<string, string>>({});
 
-  // Drag & drop + ouverture de dossier
-  let dragged = $state<string | null>(null);
-  let dragOver = $state<string | null>(null);
+  // Drag & drop (pointer events, fiable en WebView2) + ouverture de dossier
+  let dragName = $state<string | null>(null);
+  let dragActive = $state(false);
+  let dragPos = $state({ x: 0, y: 0 });
+  let dropTarget = $state<string | null>(null);
+  let startPos = { x: 0, y: 0 };
   let openFolderId = $state<string | null>(null);
   let editName = $state("");
+
+  const dragContainer = $derived(status?.containers.find((c) => c.name === dragName) ?? null);
+
+  function onPointerDown(e: PointerEvent, name: string) {
+    if (e.button !== 0) return;
+    dragName = name;
+    dragActive = false;
+    dropTarget = null;
+    startPos = { x: e.clientX, y: e.clientY };
+    dragPos = startPos;
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  }
+
+  function onPointerMove(e: PointerEvent) {
+    if (!dragName) return;
+    if (!dragActive) {
+      if (Math.hypot(e.clientX - startPos.x, e.clientY - startPos.y) < 6) return;
+      dragActive = true;
+    }
+    dragPos = { x: e.clientX, y: e.clientY };
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const hit = el?.closest?.("[data-drop]") as HTMLElement | null;
+    const t = hit?.dataset.drop ?? null;
+    dropTarget = t && t !== "c:" + dragName ? t : null;
+  }
+
+  function onPointerUp() {
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+    const name = dragName;
+    const active = dragActive;
+    const target = dropTarget;
+    dragName = null;
+    dragActive = false;
+    dropTarget = null;
+    if (!name) return;
+    if (!active) {
+      // simple clic -> ouvre le détail
+      const c = status?.containers.find((x) => x.name === name);
+      if (c) open(c);
+      return;
+    }
+    if (!target) return;
+    if (target.startsWith("f:")) moveTo(name, target.slice(2));
+    else if (target.startsWith("c:")) createFolderWith(name, target.slice(2));
+  }
 
   const FK = $derived(`beacon.folders.${profileId}`);
   const AK = $derived(`beacon.assign.${profileId}`);
@@ -211,7 +261,8 @@
         <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
         <div
           class="fcard"
-          class:drop={dragOver === "f:" + f.id}
+          class:drop={dropTarget === "f:" + f.id}
+          data-drop={"f:" + f.id}
           role="button"
           tabindex="0"
           onclick={() => openFolderView(f.id, f.name)}
@@ -220,23 +271,6 @@
               e.preventDefault();
               openFolderView(f.id, f.name);
             }
-          }}
-          ondragenter={(e) => {
-            if (dragged) e.preventDefault();
-          }}
-          ondragover={(e) => {
-            if (dragged) {
-              e.preventDefault();
-              dragOver = "f:" + f.id;
-            }
-          }}
-          ondragleave={() => {
-            if (dragOver === "f:" + f.id) dragOver = null;
-          }}
-          ondrop={(e) => {
-            e.preventDefault();
-            if (dragged) moveTo(dragged, f.id);
-            dragOver = null;
           }}
         >
           <span class="fprev">
@@ -253,45 +287,17 @@
         <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
         <div
           class="tile"
-          class:drop={dragOver === "c:" + c.name}
-          class:dragging={dragged === c.name}
+          class:drop={dropTarget === "c:" + c.name}
+          class:dragging={dragName === c.name && dragActive}
+          data-drop={"c:" + c.name}
           role="button"
           tabindex="0"
-          draggable="true"
-          onclick={() => open(c)}
+          onpointerdown={(e) => onPointerDown(e, c.name)}
           onkeydown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
               open(c);
             }
-          }}
-          ondragstart={(e) => {
-            dragged = c.name;
-            if (e.dataTransfer) {
-              e.dataTransfer.effectAllowed = "move";
-              e.dataTransfer.setData("text/plain", c.name);
-            }
-          }}
-          ondragend={() => {
-            dragged = null;
-            dragOver = null;
-          }}
-          ondragenter={(e) => {
-            if (dragged && dragged !== c.name) e.preventDefault();
-          }}
-          ondragover={(e) => {
-            if (dragged && dragged !== c.name) {
-              e.preventDefault();
-              dragOver = "c:" + c.name;
-            }
-          }}
-          ondragleave={() => {
-            if (dragOver === "c:" + c.name) dragOver = null;
-          }}
-          ondrop={(e) => {
-            e.preventDefault();
-            if (dragged && dragged !== c.name) createFolderWith(dragged, c.name);
-            dragOver = null;
           }}
           in:fly={{ y: 10, duration: 240, easing: quintOut }}
         >
@@ -400,6 +406,15 @@
 
       {#if error}<div class="state err small"><Icon name="alert" size={14} /> {error}</div>{/if}
     </div>
+  </div>
+{/if}
+
+{#if dragActive && dragContainer}
+  <div class="drag-ghost" style="left:{dragPos.x}px; top:{dragPos.y}px">
+    <span class="tile-icon" class:on={dragContainer.state === "running"}>
+      <Icon name="server" size={26} />
+    </span>
+    <span class="tile-name">{dragContainer.name}</span>
   </div>
 {/if}
 
@@ -594,11 +609,27 @@
     gap: 0.45rem;
     border: none;
     background: transparent;
-    cursor: pointer;
+    cursor: grab;
     padding: 0;
     color: #cdd6e6;
     user-select: none;
     -webkit-user-select: none;
+    touch-action: none;
+  }
+  .drag-ghost {
+    position: fixed;
+    z-index: 100;
+    transform: translate(-50%, -50%) scale(1.08);
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.45rem;
+    opacity: 0.92;
+    filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.5));
+  }
+  .drag-ghost .tile-name {
+    color: #fff;
   }
   .tile-icon {
     position: relative;
