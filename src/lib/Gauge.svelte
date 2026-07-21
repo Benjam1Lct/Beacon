@@ -10,8 +10,8 @@
 
   const clamped = $derived(Math.max(0, Math.min(100, value)));
   const offset = $derived(CIRC * (1 - clamped / 100));
-  // Vert façon ZimaOS, rouge au seuil critique (>=90%).
-  const color = $derived(clamped >= 90 ? "#f87171" : "#22c55e");
+  // Même teal que le graphe réseau, rouge au seuil critique (>=90%).
+  const color = $derived(clamped >= 90 ? "#f87171" : "#2dd4bf");
   // Point indicateur à l'extrémité de l'arc.
   const dotAngle = $derived(((-90 + (clamped / 100) * 360) * Math.PI) / 180);
   const dotX = $derived(50 + R * Math.cos(dotAngle));
