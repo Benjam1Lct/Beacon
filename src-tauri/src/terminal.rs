@@ -12,6 +12,8 @@ pub struct TermTarget {
     pub port: u16,
     pub user: String,
     pub key_pem: Option<String>,
+    /// Utilisé uniquement pour le titre de la fenêtre sur Windows.
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub label: String,
 }
 
