@@ -6,7 +6,7 @@
 use serde::Serialize;
 
 /// Commande distante : imprime chaque métrique dans une section balisée.
-/// Deux échantillons `/proc/stat` (à 0,25 s d'intervalle) permettent le calcul du % CPU.
+/// Deux échantillons `/proc/stat` (à 1 s d'intervalle) permettent un calcul du % CPU stable.
 pub const METRICS_CMD: &str = "LC_ALL=C\n\
      echo '===HOST==='; hostname 2>/dev/null\n\
      echo '===CORES==='; grep -c '^cpu[0-9]' /proc/stat\n\
@@ -14,7 +14,7 @@ pub const METRICS_CMD: &str = "LC_ALL=C\n\
      echo '===LOAD==='; cat /proc/loadavg\n\
      echo '===MEM==='; cat /proc/meminfo\n\
      echo '===CPU1==='; grep '^cpu ' /proc/stat\n\
-     sleep 0.25\n\
+     sleep 1\n\
      echo '===CPU2==='; grep '^cpu ' /proc/stat\n\
      echo '===DISK==='; df -kP /\n\
      echo '===NET==='; cat /proc/net/dev";

@@ -206,9 +206,9 @@
         <line x1="0" y1="20" x2="100" y2="20" class="grid" />
         {#if netDown.length > 1}
           <path d={downCurve.area} fill="url(#net-down)" />
-          <path d={downCurve.line} fill="none" stroke="#2dd4bf" stroke-width="1.3" />
           <path d={upCurve.area} fill="url(#net-up)" />
-          <path d={upCurve.line} fill="none" stroke="#4ade80" stroke-width="1.3" />
+          <path d={downCurve.line} fill="none" stroke="#2dd4bf" stroke-width="1.4" />
+          <path d={upCurve.line} fill="none" stroke="#4ade80" stroke-width="1.4" />
         {/if}
       </svg>
       <div class="net-rates">
@@ -530,8 +530,8 @@
     background: #6b7280;
   }
   .live.on .dot {
-    background: #2dd4bf;
-    box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.22);
+    background: #4ade80;
+    box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.22);
   }
 
   .server-hero {
