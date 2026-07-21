@@ -146,7 +146,7 @@
 
     <!-- Stockage -->
     <div class="w" in:fly={{ x: -16, duration: 420, delay: 140, easing: quintOut }}>
-      <div class="w-head"><span>Stockage</span><Icon name="disk" size={15} /></div>
+      <div class="w-head"><span>Stockage</span><Icon name="hdd" size={16} /></div>
       {#if metrics}
         <div class="storage">
           <div class="storage-row">

@@ -30,7 +30,7 @@
       {/each}
     </g>
   </svg>
-  <!-- Remplace l'approximation par ta vraie image : dépose-la dans static/wallpaper.jpg -->
+  <!-- Vrai wallpaper (static/bg-black.jpg) ; l'approximation SVG sert de repli. -->
   <div class="photo"></div>
 </div>
 
@@ -68,7 +68,7 @@
   .photo {
     position: absolute;
     inset: 0;
-    background-image: url("/wallpaper.jpg");
+    background-image: url("/bg-black.jpg");
     background-size: cover;
     background-position: center;
   }
