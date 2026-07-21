@@ -1,5 +1,6 @@
 mod commands;
 mod hardening;
+mod monitor;
 mod secrets;
 mod ssh;
 mod store;
@@ -15,6 +16,7 @@ pub fn run() {
             commands::save_profile,
             commands::delete_profile,
             commands::connect_profile,
+            commands::fetch_metrics,
             commands::harden_bootstrap,
         ])
         .run(tauri::generate_context!())

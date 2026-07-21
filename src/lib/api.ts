@@ -6,6 +6,7 @@ import type {
   ExecOutcome,
   HardenInput,
   HardeningReport,
+  Metrics,
   ProfileMeta,
   SaveProfileInput,
   SshProfile,
@@ -34,6 +35,11 @@ export function deleteProfile(id: string): Promise<void> {
 /** Se connecte à un profil enregistré (TOFU appliqué). Mot de passe requis pour ce type de profil. */
 export function connectProfile(id: string, password?: string): Promise<ExecOutcome> {
   return invoke<ExecOutcome>("connect_profile", { id, password: password ?? null });
+}
+
+/** Récupère les métriques système d'un serveur (CPU/RAM/disque/réseau). */
+export function fetchMetrics(id: string, password?: string): Promise<Metrics> {
+  return invoke<Metrics>("fetch_metrics", { id, password: password ?? null });
 }
 
 /** Durcissement first-run (root uniquement) : crée un user dédié, clé, désactive root/password. */

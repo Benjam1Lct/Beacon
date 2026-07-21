@@ -71,3 +71,17 @@ export interface HardeningReport {
   profile: ProfileMeta | null;
   message: string;
 }
+
+export interface Metrics {
+  hostname: string;
+  uptimeSecs: number;
+  cpuCores: number;
+  cpuPercent: number;
+  loadAvg: [number, number, number];
+  memTotalKb: number;
+  memAvailableKb: number;
+  diskTotalBytes: number;
+  diskUsedBytes: number;
+  netRxBytes: number;
+  netTxBytes: number;
+}

@@ -3,18 +3,55 @@
 //! Stockage strictement local : métadonnées dans un JSON du dossier de données de l'app,
 //! secrets (clé + passphrase) dans le keyring de l'OS.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use tauri::{AppHandle, Manager};
 
 use crate::hardening::{self, HardenInput, HardeningReport};
+use crate::monitor::{self, Metrics};
 use crate::secrets::{self, KeySecret};
 use crate::ssh::{self, AuthInput, ExecOutcome, SshProfile};
 use crate::store::{self, AuthKind, ProfileMeta};
 
 pub fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     app.path().app_data_dir().map_err(|e| e.to_string())
+}
+
+/// Construit un profil SSH prêt à l'emploi depuis un profil enregistré (clé au keyring,
+/// ou mot de passe fourni pour la session). Renvoie aussi les métadonnées.
+fn resolve_profile(
+    dir: &Path,
+    id: &str,
+    password: Option<String>,
+) -> Result<(SshProfile, ProfileMeta), String> {
+    let meta = store::get(dir, id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Profil introuvable".to_string())?;
+
+    let auth = match meta.auth_kind {
+        AuthKind::Key => {
+            let secret = secrets::get_key(id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "Clé absente du trousseau".to_string())?;
+            AuthInput::KeyContent {
+                pem: secret.pem,
+                passphrase: secret.passphrase,
+            }
+        }
+        AuthKind::Password => {
+            let password = password.ok_or_else(|| "Mot de passe requis".to_string())?;
+            AuthInput::Password { password }
+        }
+    };
+
+    let profile = SshProfile {
+        host: meta.host.clone(),
+        port: meta.port,
+        username: meta.username.clone(),
+        auth,
+    };
+    Ok((profile, meta))
 }
 
 /// Teste une connexion ad-hoc (flux d'import, avant enregistrement).
@@ -106,32 +143,7 @@ pub async fn connect_profile(
     password: Option<String>,
 ) -> Result<ExecOutcome, String> {
     let dir = data_dir(&app)?;
-    let meta = store::get(&dir, &id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Profil introuvable".to_string())?;
-
-    let auth = match meta.auth_kind {
-        AuthKind::Key => {
-            let secret = secrets::get_key(&id)
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| "Clé absente du trousseau".to_string())?;
-            AuthInput::KeyContent {
-                pem: secret.pem,
-                passphrase: secret.passphrase,
-            }
-        }
-        AuthKind::Password => {
-            let password = password.ok_or_else(|| "Mot de passe requis".to_string())?;
-            AuthInput::Password { password }
-        }
-    };
-
-    let profile = SshProfile {
-        host: meta.host.clone(),
-        port: meta.port,
-        username: meta.username.clone(),
-        auth,
-    };
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
 
     let outcome = ssh::exec(&profile, "uname -a", meta.host_key_fp.as_deref())
         .await
@@ -145,6 +157,22 @@ pub async fn connect_profile(
     }
 
     Ok(outcome)
+}
+
+/// Récupère les métriques système d'un serveur enregistré (CPU/RAM/disque/réseau).
+/// Appelé périodiquement par le dashboard.
+#[tauri::command]
+pub async fn fetch_metrics(
+    app: AppHandle,
+    id: String,
+    password: Option<String>,
+) -> Result<Metrics, String> {
+    let dir = data_dir(&app)?;
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
+    let out = ssh::exec(&profile, monitor::METRICS_CMD, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    monitor::parse(&out.result.stdout)
 }
 
 /// Durcissement first-run : crée un user dédié, génère une clé, désactive root/mot de passe.

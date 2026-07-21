@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import Icon from "$lib/Icon.svelte";
+  import Dashboard from "$lib/Dashboard.svelte";
   import {
-    connectProfile,
     deleteProfile,
     hardenBootstrap,
     listProfiles,
@@ -18,8 +18,12 @@
     SaveAuth,
   } from "$lib/types";
 
-  let view = $state<"list" | "form">("list");
+  let view = $state<"list" | "form" | "dashboard">("list");
   let profiles = $state<ProfileMeta[]>([]);
+
+  // Dashboard (serveur actif)
+  let activeProfile = $state<ProfileMeta | null>(null);
+  let activePassword = $state<string | undefined>(undefined);
 
   // Formulaire d'ajout
   let label = $state("");
@@ -43,9 +47,6 @@
   let hardenReport = $state<HardeningReport | null>(null);
 
   // Connexion depuis la liste
-  let connectingId = $state<string | null>(null);
-  let connectResult = $state<{ id: string; text: string } | null>(null);
-  let connectError = $state<{ id: string; msg: string } | null>(null);
   let passwordPromptId = $state<string | null>(null);
   let promptPassword = $state("");
 
@@ -169,21 +170,12 @@
     return "check";
   }
 
-  async function doConnect(profile: ProfileMeta, pwd?: string) {
-    connectingId = profile.id;
-    connectResult = null;
-    connectError = null;
+  function openDashboard(profile: ProfileMeta, pwd?: string) {
+    activeProfile = profile;
+    activePassword = pwd;
     passwordPromptId = null;
-    try {
-      const outcome = await connectProfile(profile.id, pwd);
-      connectResult = { id: profile.id, text: outcome.result.stdout.trim() };
-      await refresh(); // récupère l'empreinte épinglée au 1er contact
-    } catch (e) {
-      connectError = { id: profile.id, msg: String(e) };
-    } finally {
-      connectingId = null;
-      promptPassword = "";
-    }
+    promptPassword = "";
+    view = "dashboard";
   }
 
   function onConnectClick(profile: ProfileMeta) {
@@ -191,15 +183,20 @@
       passwordPromptId = profile.id;
       promptPassword = "";
     } else {
-      doConnect(profile);
+      openDashboard(profile);
     }
+  }
+
+  function backToList() {
+    view = "list";
+    activeProfile = null;
+    activePassword = undefined;
+    refresh();
   }
 
   async function remove(profile: ProfileMeta) {
     try {
       await deleteProfile(profile.id);
-      if (connectResult?.id === profile.id) connectResult = null;
-      if (connectError?.id === profile.id) connectError = null;
       await refresh();
     } catch (e) {
       formError = String(e);
@@ -217,7 +214,9 @@
       </div>
     </header>
 
-    {#if view === "list"}
+    {#if view === "dashboard" && activeProfile}
+      <Dashboard profile={activeProfile} password={activePassword} onBack={backToList} />
+    {:else if view === "list"}
       <section class="panel">
         <div class="panel-head">
           <h2>Mes serveurs</h2>
@@ -254,16 +253,8 @@
                 </div>
 
                 <div class="card-actions">
-                  <button
-                    class="btn primary sm"
-                    onclick={() => onConnectClick(p)}
-                    disabled={connectingId === p.id}
-                  >
-                    {#if connectingId === p.id}
-                      <Icon name="spinner" size={16} spin /> Connexion…
-                    {:else}
-                      <Icon name="arrow" size={16} /> Connecter
-                    {/if}
+                  <button class="btn primary sm" onclick={() => onConnectClick(p)}>
+                    <Icon name="arrow" size={16} /> Ouvrir
                   </button>
                   <button class="btn ghost sm" title="Supprimer" onclick={() => remove(p)}>
                     <Icon name="trash" size={16} />
@@ -271,27 +262,20 @@
                 </div>
 
                 {#if passwordPromptId === p.id}
-                  <form class="pwd-prompt" onsubmit={(e) => { e.preventDefault(); doConnect(p, promptPassword); }}>
+                  <form
+                    class="pwd-prompt"
+                    onsubmit={(e) => {
+                      e.preventDefault();
+                      openDashboard(p, promptPassword);
+                    }}
+                  >
                     <input
                       type="password"
                       placeholder="Mot de passe (non enregistré)"
                       bind:value={promptPassword}
                     />
-                    <button class="btn primary sm" type="submit">Valider</button>
+                    <button class="btn primary sm" type="submit">Ouvrir</button>
                   </form>
-                {/if}
-
-                {#if connectResult?.id === p.id}
-                  <div class="feedback ok">
-                    <span class="fb-title"><Icon name="check" size={16} /> Connecté</span>
-                    <code>{connectResult.text}</code>
-                  </div>
-                {/if}
-                {#if connectError?.id === p.id}
-                  <div class="feedback err">
-                    <span class="fb-title"><Icon name="alert" size={16} /> Échec</span>
-                    <span>{connectError.msg}</span>
-                  </div>
                 {/if}
               </li>
             {/each}
