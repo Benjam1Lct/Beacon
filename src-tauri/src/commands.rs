@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use tauri::{AppHandle, Manager};
 
+use crate::caddy::{self, CaddyRoute, RouteHealth};
 use crate::docker::{self, DeployConfig, DockerStatus};
 use crate::hardening::{self, HardenInput, HardeningReport};
 use crate::monitor::{self, Metrics};
@@ -175,6 +176,82 @@ pub async fn fetch_metrics(
         .await
         .map_err(|e| e.to_string())?;
     monitor::parse(&out.result.stdout)
+}
+
+/// Indique si Caddy est installé sur le serveur.
+#[tauri::command]
+pub async fn caddy_status(
+    app: AppHandle,
+    id: String,
+    password: Option<String>,
+) -> Result<bool, String> {
+    let dir = data_dir(&app)?;
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
+    let out = ssh::exec(&profile, caddy::STATUS_CMD, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(out.result.stdout.contains("INSTALLED"))
+}
+
+/// Installe Caddy (dépôt officiel).
+#[tauri::command]
+pub async fn install_caddy(
+    app: AppHandle,
+    id: String,
+    password: Option<String>,
+) -> Result<String, String> {
+    let dir = data_dir(&app)?;
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
+    let out = ssh::exec(&profile, caddy::INSTALL_CMD, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    if out.result.exit_code == 0 {
+        Ok(out.result.stdout.trim().to_string())
+    } else {
+        Err(out.result.stderr.trim().to_string())
+    }
+}
+
+/// Applique les liaisons reverse proxy : génère le Caddyfile, valide et recharge Caddy.
+#[tauri::command]
+pub async fn apply_routes(
+    app: AppHandle,
+    id: String,
+    routes: Vec<CaddyRoute>,
+    password: Option<String>,
+) -> Result<(), String> {
+    let caddyfile = caddy::generate(&routes);
+    let cmd = caddy::apply_cmd(&caddyfile);
+    let dir = data_dir(&app)?;
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
+    let out = ssh::exec(&profile, &cmd, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    if out.result.exit_code == 0 {
+        Ok(())
+    } else {
+        Err(out.result.stderr.trim().to_string())
+    }
+}
+
+/// Diagnostic des liaisons (DNS pointe vers le serveur ? service en écoute ?).
+#[tauri::command]
+pub async fn check_routes(
+    app: AppHandle,
+    id: String,
+    routes: Vec<CaddyRoute>,
+    password: Option<String>,
+) -> Result<Vec<RouteHealth>, String> {
+    if routes.is_empty() {
+        return Ok(Vec::new());
+    }
+    let cmd = caddy::health_cmd(&routes);
+    let dir = data_dir(&app)?;
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
+    let out = ssh::exec(&profile, &cmd, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(caddy::parse_health(&out.result.stdout))
 }
 
 /// Ouvre un terminal système avec une session SSH pré-remplie vers le serveur.

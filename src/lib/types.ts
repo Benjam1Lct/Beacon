@@ -88,6 +88,20 @@ export interface DockerStatus {
   containers: Container[];
 }
 
+export type SslMode = "public" | "local" | "none";
+export interface CaddyRoute {
+  domain: string;
+  targetPort: number;
+  ssl: SslMode;
+}
+export interface RouteHealth {
+  domain: string;
+  dnsOk: boolean;
+  portOk: boolean;
+  resolvedIp: string;
+  serverIp: string;
+}
+
 export interface Metrics {
   hostname: string;
   uptimeSecs: number;

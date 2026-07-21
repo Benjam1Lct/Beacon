@@ -8,6 +8,7 @@
   import AppIcon from "$lib/AppIcon.svelte";
   import Containers from "$lib/Containers.svelte";
   import AppStore from "$lib/AppStore.svelte";
+  import Network from "$lib/Network.svelte";
   import { fetchMetrics } from "$lib/api";
   import type { Metrics, ProfileMeta } from "$lib/types";
 
@@ -29,6 +30,7 @@
 
   let clock = $state(new Date());
   let storeOpen = $state(false);
+  let networkOpen = $state(false);
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let clockTimer: ReturnType<typeof setInterval> | null = null;
@@ -273,8 +275,15 @@
             <button
               class="tile"
               type="button"
-              title={app.key === "appstore" ? "Ouvrir l'App Store" : "Bientôt disponible"}
-              onclick={() => app.key === "appstore" && (storeOpen = true)}
+              title={app.key === "appstore"
+                ? "Ouvrir l'App Store"
+                : app.key === "network"
+                  ? "Réseau — reverse proxy"
+                  : "Bientôt disponible"}
+              onclick={() => {
+                if (app.key === "appstore") storeOpen = true;
+                else if (app.key === "network") networkOpen = true;
+              }}
               in:fly={{ y: 16, duration: 340, delay: i * 45, easing: quintOut }}
             >
               <span class="tile-icon"><AppIcon name={app.key} size={60} /></span>
@@ -294,6 +303,10 @@
 
 {#if storeOpen}
   <AppStore profileId={profile.id} {password} onClose={() => (storeOpen = false)} onDeployed={() => {}} />
+{/if}
+
+{#if networkOpen}
+  <Network profileId={profile.id} {password} onClose={() => (networkOpen = false)} />
 {/if}
 
 <style>

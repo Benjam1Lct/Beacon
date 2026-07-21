@@ -1,3 +1,4 @@
+mod caddy;
 mod commands;
 mod docker;
 mod hardening;
@@ -24,6 +25,10 @@ pub fn run() {
             commands::docker_logs,
             commands::deploy_app,
             commands::install_docker,
+            commands::caddy_status,
+            commands::install_caddy,
+            commands::apply_routes,
+            commands::check_routes,
             commands::open_ssh_terminal,
             commands::harden_bootstrap,
         ])

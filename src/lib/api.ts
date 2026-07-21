@@ -3,12 +3,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
+  CaddyRoute,
   DockerStatus,
   ExecOutcome,
   HardenInput,
   HardeningReport,
   Metrics,
   ProfileMeta,
+  RouteHealth,
   SaveProfileInput,
   SshProfile,
 } from "./types";
@@ -75,6 +77,30 @@ export function deployApp(
 /** Installe Docker sur le serveur (script officiel). */
 export function installDocker(id: string, password?: string): Promise<string> {
   return invoke<string>("install_docker", { id, password: password ?? null });
+}
+
+/** Indique si Caddy est installé. */
+export function caddyStatus(id: string, password?: string): Promise<boolean> {
+  return invoke<boolean>("caddy_status", { id, password: password ?? null });
+}
+
+/** Installe Caddy (dépôt officiel). */
+export function installCaddy(id: string, password?: string): Promise<string> {
+  return invoke<string>("install_caddy", { id, password: password ?? null });
+}
+
+/** Applique les liaisons reverse proxy (génère + recharge Caddy). */
+export function applyRoutes(id: string, routes: CaddyRoute[], password?: string): Promise<void> {
+  return invoke<void>("apply_routes", { id, routes, password: password ?? null });
+}
+
+/** Diagnostic des liaisons (DNS / port). */
+export function checkRoutes(
+  id: string,
+  routes: CaddyRoute[],
+  password?: string,
+): Promise<RouteHealth[]> {
+  return invoke<RouteHealth[]>("check_routes", { id, routes, password: password ?? null });
 }
 
 /** Derniers logs d'un conteneur. */
