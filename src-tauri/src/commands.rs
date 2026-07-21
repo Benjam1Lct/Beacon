@@ -14,6 +14,7 @@ use crate::monitor::{self, Metrics};
 use crate::secrets::{self, KeySecret};
 use crate::ssh::{self, AuthInput, ExecOutcome, SshProfile};
 use crate::store::{self, AuthKind, ProfileMeta};
+use crate::terminal::{self, TermTarget};
 
 pub fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     app.path().app_data_dir().map_err(|e| e.to_string())
@@ -174,6 +175,32 @@ pub async fn fetch_metrics(
         .await
         .map_err(|e| e.to_string())?;
     monitor::parse(&out.result.stdout)
+}
+
+/// Ouvre un terminal système avec une session SSH pré-remplie vers le serveur.
+/// La clé (keyring) est exportée en fichier temporaire éphémère puis supprimée.
+#[tauri::command]
+pub fn open_ssh_terminal(app: AppHandle, id: String) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    let meta = store::get(&dir, &id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Profil introuvable".to_string())?;
+    let key_pem = match meta.auth_kind {
+        AuthKind::Key => Some(
+            secrets::get_key(&id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "Clé absente du trousseau".to_string())?
+                .pem,
+        ),
+        AuthKind::Password => None,
+    };
+    terminal::open(TermTarget {
+        host: meta.host,
+        port: meta.port,
+        user: meta.username,
+        key_pem,
+        label: meta.label,
+    })
 }
 
 /// Liste les conteneurs Docker d'un serveur (état + stats), et indique si Docker est installé.

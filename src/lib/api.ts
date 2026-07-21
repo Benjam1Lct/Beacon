@@ -33,6 +33,11 @@ export function deleteProfile(id: string): Promise<void> {
   return invoke<void>("delete_profile", { id });
 }
 
+/** Ouvre un terminal système avec une session SSH pré-remplie vers le serveur. */
+export function openSshTerminal(id: string): Promise<void> {
+  return invoke<void>("open_ssh_terminal", { id });
+}
+
 /** Se connecte à un profil enregistré (TOFU appliqué). Mot de passe requis pour ce type de profil. */
 export function connectProfile(id: string, password?: string): Promise<ExecOutcome> {
   return invoke<ExecOutcome>("connect_profile", { id, password: password ?? null });

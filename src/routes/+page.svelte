@@ -9,6 +9,7 @@
     deleteProfile,
     hardenBootstrap,
     listProfiles,
+    openSshTerminal,
     pickKeyFile,
     saveProfile,
     sshTestConnection,
@@ -193,6 +194,14 @@
     refresh();
   }
 
+  async function openTerminal(profile: ProfileMeta) {
+    try {
+      await openSshTerminal(profile.id);
+    } catch (e) {
+      formError = String(e);
+    }
+  }
+
   async function remove(profile: ProfileMeta) {
     try {
       await deleteProfile(profile.id);
@@ -257,6 +266,13 @@
                   <div class="card-actions">
                     <button class="btn primary sm" onclick={() => onConnectClick(p)}>
                       <Icon name="arrow" size={15} /> Ouvrir
+                    </button>
+                    <button
+                      class="btn ghost sm icon term"
+                      title="Ouvrir un terminal SSH"
+                      onclick={() => openTerminal(p)}
+                    >
+                      <Icon name="terminal" size={16} />
                     </button>
                     <button class="btn ghost sm icon" title="Supprimer" onclick={() => remove(p)}>
                       <Icon name="trash" size={16} />
@@ -565,6 +581,11 @@
     color: #dc2626;
     border-color: rgba(220, 38, 38, 0.4);
     background: rgba(220, 38, 38, 0.1);
+  }
+  .card .btn.ghost.icon.term:hover:not(:disabled) {
+    color: #16181d;
+    border-color: rgba(0, 0, 0, 0.22);
+    background: rgba(0, 0, 0, 0.08);
   }
   .card .pwd-prompt input {
     background: rgba(0, 0, 0, 0.04);

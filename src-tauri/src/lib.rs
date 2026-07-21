@@ -5,6 +5,7 @@ mod monitor;
 mod secrets;
 mod ssh;
 mod store;
+mod terminal;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -21,6 +22,7 @@ pub fn run() {
             commands::docker_list,
             commands::docker_action,
             commands::docker_logs,
+            commands::open_ssh_terminal,
             commands::harden_bootstrap,
         ])
         .run(tauri::generate_context!())
