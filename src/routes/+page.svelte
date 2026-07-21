@@ -1,7 +1,21 @@
 <script lang="ts">
-  import { sshTestConnection } from "$lib/api";
-  import type { AuthInput, SshProfile, SshResult } from "$lib/types";
+  import { onMount } from "svelte";
+  import Icon from "$lib/Icon.svelte";
+  import {
+    connectProfile,
+    deleteProfile,
+    listProfiles,
+    pickKeyFile,
+    saveProfile,
+    sshTestConnection,
+  } from "$lib/api";
+  import type { AuthInput, ExecOutcome, ProfileMeta, SaveAuth } from "$lib/types";
 
+  let view = $state<"list" | "form">("list");
+  let profiles = $state<ProfileMeta[]>([]);
+
+  // Formulaire d'ajout
+  let label = $state("");
   let host = $state("");
   let port = $state(22);
   let username = $state("root");
@@ -11,112 +25,340 @@
   let password = $state("");
 
   let testing = $state(false);
-  let result = $state<SshResult | null>(null);
-  let error = $state<string | null>(null);
+  let testedFp = $state<string | null>(null);
+  let testOutput = $state<string | null>(null);
+  let formError = $state<string | null>(null);
+  let saving = $state(false);
 
-  const canSubmit = $derived(
+  // Connexion depuis la liste
+  let connectingId = $state<string | null>(null);
+  let connectResult = $state<{ id: string; text: string } | null>(null);
+  let connectError = $state<{ id: string; msg: string } | null>(null);
+  let passwordPromptId = $state<string | null>(null);
+  let promptPassword = $state("");
+
+  const canTest = $derived(
     host.trim() !== "" &&
       username.trim() !== "" &&
       (authKind === "key" ? keyPath.trim() !== "" : password !== ""),
   );
 
-  async function testConnection(event: Event) {
+  onMount(refresh);
+
+  async function refresh() {
+    try {
+      profiles = await listProfiles();
+    } catch (e) {
+      formError = String(e);
+    }
+  }
+
+  function openForm() {
+    label = "";
+    host = "";
+    port = 22;
+    username = "root";
+    authKind = "key";
+    keyPath = "";
+    passphrase = "";
+    password = "";
+    testing = false;
+    testedFp = null;
+    testOutput = null;
+    formError = null;
+    view = "form";
+  }
+
+  async function browseKey() {
+    const picked = await pickKeyFile();
+    if (picked) keyPath = picked;
+  }
+
+  function buildAuth(): AuthInput {
+    return authKind === "key"
+      ? { kind: "key", path: keyPath.trim(), passphrase: passphrase || null }
+      : { kind: "password", password };
+  }
+
+  async function testConn(event: Event) {
     event.preventDefault();
     testing = true;
-    result = null;
-    error = null;
-
-    const auth: AuthInput =
-      authKind === "key"
-        ? { kind: "key", path: keyPath.trim(), passphrase: passphrase || null }
-        : { kind: "password", password };
-
-    const profile: SshProfile = { host: host.trim(), port, username: username.trim(), auth };
-
+    testOutput = null;
+    formError = null;
+    testedFp = null;
     try {
-      result = await sshTestConnection(profile);
+      const outcome: ExecOutcome = await sshTestConnection({
+        host: host.trim(),
+        port,
+        username: username.trim(),
+        auth: buildAuth(),
+      });
+      testOutput = outcome.result.stdout.trim();
+      testedFp = outcome.host_key_fp;
     } catch (e) {
-      error = typeof e === "string" ? e : String(e);
+      formError = String(e);
     } finally {
       testing = false;
+    }
+  }
+
+  async function save() {
+    saving = true;
+    formError = null;
+    try {
+      const auth: SaveAuth =
+        authKind === "key"
+          ? { kind: "key", path: keyPath.trim(), passphrase: passphrase || null }
+          : { kind: "password" };
+      await saveProfile({
+        label: label.trim() || host.trim(),
+        host: host.trim(),
+        port,
+        username: username.trim(),
+        auth,
+        hostKeyFp: testedFp,
+      });
+      await refresh();
+      view = "list";
+    } catch (e) {
+      formError = String(e);
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function doConnect(profile: ProfileMeta, pwd?: string) {
+    connectingId = profile.id;
+    connectResult = null;
+    connectError = null;
+    passwordPromptId = null;
+    try {
+      const outcome = await connectProfile(profile.id, pwd);
+      connectResult = { id: profile.id, text: outcome.result.stdout.trim() };
+      await refresh(); // récupère l'empreinte épinglée au 1er contact
+    } catch (e) {
+      connectError = { id: profile.id, msg: String(e) };
+    } finally {
+      connectingId = null;
+      promptPassword = "";
+    }
+  }
+
+  function onConnectClick(profile: ProfileMeta) {
+    if (profile.authKind === "password") {
+      passwordPromptId = profile.id;
+      promptPassword = "";
+    } else {
+      doConnect(profile);
+    }
+  }
+
+  async function remove(profile: ProfileMeta) {
+    try {
+      await deleteProfile(profile.id);
+      if (connectResult?.id === profile.id) connectResult = null;
+      if (connectError?.id === profile.id) connectError = null;
+      await refresh();
+    } catch (e) {
+      formError = String(e);
     }
   }
 </script>
 
 <main>
-  <div class="card">
+  <div class="shell">
     <header>
-      <div class="logo">🔦</div>
-      <h1>Beacon</h1>
-      <p class="tagline">Connecte-toi à ton serveur — VPS ou machine locale.</p>
+      <span class="brand-icon"><Icon name="beacon" size={30} /></span>
+      <div>
+        <h1>Beacon</h1>
+        <p class="tagline">Pilote ton serveur — VPS ou machine locale.</p>
+      </div>
     </header>
 
-    <form onsubmit={testConnection}>
-      <div class="grid">
-        <label class="span-2">
-          <span>Adresse IP / hôte</span>
-          <input bind:value={host} placeholder="192.168.1.50 ou 203.0.113.10" autocomplete="off" />
-        </label>
+    {#if view === "list"}
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Mes serveurs</h2>
+          <button class="btn primary" onclick={openForm}>
+            <Icon name="plus" size={18} /> Ajouter un serveur
+          </button>
+        </div>
 
-        <label>
-          <span>Port</span>
-          <input type="number" bind:value={port} min="1" max="65535" />
-        </label>
+        {#if profiles.length === 0}
+          <div class="empty">
+            <Icon name="server" size={40} />
+            <p>Aucun serveur enregistré.</p>
+            <button class="btn primary" onclick={openForm}>
+              <Icon name="plus" size={18} /> Ajouter ton premier serveur
+            </button>
+          </div>
+        {:else}
+          <ul class="cards">
+            {#each profiles as p (p.id)}
+              <li class="card">
+                <div class="card-main">
+                  <span class="card-icon"><Icon name="server" size={22} /></span>
+                  <div class="card-info">
+                    <strong>{p.label}</strong>
+                    <span class="sub">{p.username}@{p.host}:{p.port}</span>
+                    <span class="badge">
+                      <Icon name={p.authKind === "key" ? "key" : "lock"} size={13} />
+                      {p.authKind === "key" ? "Clé SSH" : "Mot de passe"}
+                      {#if p.hostKeyFp}
+                        <span class="pinned"><Icon name="lock" size={12} /> hôte épinglé</span>
+                      {/if}
+                    </span>
+                  </div>
+                </div>
 
-        <label>
-          <span>Utilisateur</span>
-          <input bind:value={username} placeholder="root" autocomplete="off" />
-        </label>
-      </div>
+                <div class="card-actions">
+                  <button
+                    class="btn primary sm"
+                    onclick={() => onConnectClick(p)}
+                    disabled={connectingId === p.id}
+                  >
+                    {#if connectingId === p.id}
+                      <Icon name="spinner" size={16} spin /> Connexion…
+                    {:else}
+                      <Icon name="arrow" size={16} /> Connecter
+                    {/if}
+                  </button>
+                  <button class="btn ghost sm" title="Supprimer" onclick={() => remove(p)}>
+                    <Icon name="trash" size={16} />
+                  </button>
+                </div>
 
-      <div class="auth-toggle">
-        <button
-          type="button"
-          class:active={authKind === "key"}
-          onclick={() => (authKind = "key")}>Clé SSH</button
-        >
-        <button
-          type="button"
-          class:active={authKind === "password"}
-          onclick={() => (authKind = "password")}>Mot de passe</button
-        >
-      </div>
+                {#if passwordPromptId === p.id}
+                  <form class="pwd-prompt" onsubmit={(e) => { e.preventDefault(); doConnect(p, promptPassword); }}>
+                    <input
+                      type="password"
+                      placeholder="Mot de passe (non enregistré)"
+                      bind:value={promptPassword}
+                    />
+                    <button class="btn primary sm" type="submit">Valider</button>
+                  </form>
+                {/if}
 
-      {#if authKind === "key"}
-        <label>
-          <span>Chemin de la clé privée</span>
-          <input bind:value={keyPath} placeholder="C:\Users\toi\.ssh\id_ed25519" autocomplete="off" />
-        </label>
-        <label>
-          <span>Passphrase <em>(si la clé en a une)</em></span>
-          <input type="password" bind:value={passphrase} autocomplete="off" />
-        </label>
-      {:else}
-        <label>
-          <span>Mot de passe <em>(bootstrap uniquement, non enregistré)</em></span>
-          <input type="password" bind:value={password} autocomplete="off" />
-        </label>
-      {/if}
+                {#if connectResult?.id === p.id}
+                  <div class="feedback ok">
+                    <span class="fb-title"><Icon name="check" size={16} /> Connecté</span>
+                    <code>{connectResult.text}</code>
+                  </div>
+                {/if}
+                {#if connectError?.id === p.id}
+                  <div class="feedback err">
+                    <span class="fb-title"><Icon name="alert" size={16} /> Échec</span>
+                    <span>{connectError.msg}</span>
+                  </div>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </section>
+    {:else}
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Ajouter un serveur</h2>
+          <button class="btn ghost" onclick={() => (view = "list")}>
+            <Icon name="close" size={18} /> Annuler
+          </button>
+        </div>
 
-      <button class="submit" type="submit" disabled={!canSubmit || testing}>
-        {testing ? "Connexion…" : "Tester la connexion"}
-      </button>
-    </form>
+        <form class="add-form" onsubmit={testConn}>
+          <label class="span-2">
+            <span>Nom <em>(optionnel)</em></span>
+            <input bind:value={label} placeholder="Mon VPS de prod" autocomplete="off" />
+          </label>
 
-    {#if result}
-      <div class="feedback ok">
-        <strong>✅ Connecté</strong>
-        <code>{result.stdout.trim()}</code>
-      </div>
+          <div class="grid">
+            <label class="span-2">
+              <span>Adresse IP / hôte</span>
+              <input bind:value={host} placeholder="192.168.1.50 ou 203.0.113.10" autocomplete="off" />
+            </label>
+            <label>
+              <span>Port</span>
+              <input type="number" bind:value={port} min="1" max="65535" />
+            </label>
+            <label>
+              <span>Utilisateur</span>
+              <input bind:value={username} placeholder="root" autocomplete="off" />
+            </label>
+          </div>
+
+          <div class="auth-toggle">
+            <button type="button" class:active={authKind === "key"} onclick={() => (authKind = "key")}>
+              <Icon name="key" size={15} /> Clé SSH
+            </button>
+            <button
+              type="button"
+              class:active={authKind === "password"}
+              onclick={() => (authKind = "password")}
+            >
+              <Icon name="lock" size={15} /> Mot de passe
+            </button>
+          </div>
+
+          {#if authKind === "key"}
+            <label>
+              <span>Clé privée</span>
+              <div class="file-row">
+                <input bind:value={keyPath} placeholder="Choisis ta clé SSH…" readonly />
+                <button type="button" class="btn ghost sm" onclick={browseKey}>
+                  <Icon name="folder" size={16} /> Parcourir
+                </button>
+              </div>
+            </label>
+            <label>
+              <span>Passphrase <em>(si la clé en a une)</em></span>
+              <input type="password" bind:value={passphrase} autocomplete="off" />
+            </label>
+          {:else}
+            <label>
+              <span>Mot de passe <em>(bootstrap, jamais enregistré)</em></span>
+              <input type="password" bind:value={password} autocomplete="off" />
+            </label>
+          {/if}
+
+          <div class="actions">
+            <button class="btn" type="submit" disabled={!canTest || testing}>
+              {#if testing}
+                <Icon name="spinner" size={16} spin /> Test…
+              {:else}
+                Tester la connexion
+              {/if}
+            </button>
+            <button class="btn primary" type="button" onclick={save} disabled={!canTest || saving}>
+              {#if saving}
+                <Icon name="spinner" size={16} spin /> Enregistrement…
+              {:else}
+                <Icon name="check" size={16} /> Enregistrer
+              {/if}
+            </button>
+          </div>
+        </form>
+
+        {#if testOutput}
+          <div class="feedback ok">
+            <span class="fb-title"><Icon name="check" size={16} /> Connexion réussie</span>
+            <code>{testOutput}</code>
+            {#if testedFp}
+              <span class="fp">Clé d'hôte : {testedFp}</span>
+            {/if}
+          </div>
+        {/if}
+        {#if formError}
+          <div class="feedback err">
+            <span class="fb-title"><Icon name="alert" size={16} /> Échec</span>
+            <span>{formError}</span>
+          </div>
+        {/if}
+      </section>
     {/if}
-    {#if error}
-      <div class="feedback err">
-        <strong>⚠️ Échec</strong>
-        <span>{error}</span>
-      </div>
-    {/if}
 
-    <p class="privacy">🔒 100 % local — aucune donnée ne quitte ta machine, sauf la connexion à ton serveur.</p>
+    <p class="privacy">
+      <Icon name="lock" size={13} /> 100 % local — aucune donnée ne quitte ta machine, hors la connexion à ton serveur.
+    </p>
   </div>
 </main>
 
@@ -124,47 +366,159 @@
   :global(body) {
     margin: 0;
   }
-
   main {
     min-height: 100vh;
     display: grid;
-    place-items: center;
-    padding: 2rem 1rem;
+    place-items: start center;
+    padding: 2.5rem 1rem 3rem;
     font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
     color: #e7ecf3;
-    background: radial-gradient(1200px 600px at 50% -10%, #1b2a4a 0%, #0c1220 55%, #080b14 100%);
+    background: radial-gradient(1200px 700px at 50% -12%, #1b2a4a 0%, #0c1220 55%, #080b14 100%);
   }
-
-  .card {
+  .shell {
     width: 100%;
-    max-width: 460px;
-    background: rgba(20, 27, 44, 0.72);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 20px;
-    padding: 2rem;
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
-    backdrop-filter: blur(12px);
+    max-width: 620px;
   }
 
   header {
-    text-align: center;
-    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    margin-bottom: 1.6rem;
   }
-  .logo {
-    font-size: 2.4rem;
+  .brand-icon {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 15px;
+    background: linear-gradient(180deg, #3b82f6, #2563eb);
+    color: white;
+    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.4);
   }
   h1 {
-    margin: 0.2rem 0 0;
-    font-size: 1.7rem;
+    margin: 0;
+    font-size: 1.55rem;
     letter-spacing: -0.02em;
   }
   .tagline {
-    margin: 0.35rem 0 0;
+    margin: 0.15rem 0 0;
     color: #93a1bd;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
   }
 
-  form {
+  .panel {
+    background: rgba(20, 27, 44, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 18px;
+    padding: 1.4rem;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(12px);
+  }
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.1rem;
+  }
+  h2 {
+    margin: 0;
+    font-size: 1.05rem;
+  }
+
+  .empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 2.4rem 1rem;
+    color: #8695b3;
+    text-align: center;
+  }
+  .empty p {
+    margin: 0;
+  }
+
+  .cards {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .card {
+    background: rgba(9, 13, 24, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 14px;
+    padding: 0.9rem 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.7rem;
+  }
+  .card-main {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    min-width: 0;
+  }
+  .card-icon {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 11px;
+    background: rgba(59, 130, 246, 0.16);
+    color: #7ab0ff;
+  }
+  .card-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+  }
+  .card-info strong {
+    font-size: 0.98rem;
+  }
+  .sub {
+    color: #93a1bd;
+    font-size: 0.82rem;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: #7d88a3;
+    font-size: 0.74rem;
+    margin-top: 0.1rem;
+  }
+  .pinned {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    color: #62c082;
+    margin-left: 0.3rem;
+  }
+  .card-actions {
+    display: flex;
+    gap: 0.4rem;
+  }
+  .pwd-prompt,
+  .feedback {
+    flex-basis: 100%;
+  }
+  .pwd-prompt {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.3rem;
+  }
+  .pwd-prompt input {
+    flex: 1;
+  }
+
+  .add-form {
     display: flex;
     flex-direction: column;
     gap: 0.85rem;
@@ -177,7 +531,6 @@
   .span-2 {
     grid-column: 1 / -1;
   }
-
   label {
     display: flex;
     flex-direction: column;
@@ -189,20 +542,26 @@
     color: #7d88a3;
     font-style: normal;
   }
-
   input {
-    padding: 0.7rem 0.85rem;
-    border-radius: 11px;
+    padding: 0.65rem 0.8rem;
+    border-radius: 10px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     background: rgba(9, 13, 24, 0.65);
     color: #f2f5fa;
-    font-size: 0.95rem;
+    font-size: 0.92rem;
     transition: border-color 0.15s, box-shadow 0.15s;
   }
   input:focus {
     outline: none;
     border-color: #3b82f6;
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+  }
+  .file-row {
+    display: flex;
+    gap: 0.4rem;
+  }
+  .file-row input {
+    flex: 1;
   }
 
   .auth-toggle {
@@ -211,16 +570,19 @@
     background: rgba(9, 13, 24, 0.6);
     padding: 0.3rem;
     border-radius: 12px;
-    margin-top: 0.2rem;
   }
   .auth-toggle button {
     flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
     padding: 0.55rem;
     border: none;
     border-radius: 9px;
     background: transparent;
     color: #aeb9d1;
-    font-size: 0.88rem;
+    font-size: 0.86rem;
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
   }
@@ -229,53 +591,91 @@
     color: white;
   }
 
-  .submit {
-    margin-top: 0.5rem;
-    padding: 0.8rem;
+  .actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.3rem;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.65rem 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #e7ecf3;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: filter 0.15s, background 0.15s, opacity 0.15s;
+  }
+  .btn.sm {
+    padding: 0.5rem 0.7rem;
+    font-size: 0.84rem;
+  }
+  .btn.primary {
     border: none;
-    border-radius: 12px;
     background: linear-gradient(180deg, #3b82f6, #2563eb);
     color: white;
-    font-size: 0.98rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: filter 0.15s, opacity 0.15s;
   }
-  .submit:hover:not(:disabled) {
-    filter: brightness(1.08);
+  .btn.ghost {
+    background: transparent;
   }
-  .submit:disabled {
+  .btn:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
+  .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
+  .actions .btn {
+    flex: 1;
+  }
 
   .feedback {
-    margin-top: 1.1rem;
-    padding: 0.9rem 1rem;
+    margin-top: 1rem;
+    padding: 0.85rem 1rem;
     border-radius: 12px;
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
-    font-size: 0.88rem;
+    font-size: 0.86rem;
   }
   .feedback.ok {
-    background: rgba(22, 101, 52, 0.25);
-    border: 1px solid rgba(74, 222, 128, 0.35);
+    background: rgba(22, 101, 52, 0.22);
+    border: 1px solid rgba(74, 222, 128, 0.32);
   }
   .feedback.err {
-    background: rgba(127, 29, 29, 0.25);
-    border: 1px solid rgba(248, 113, 113, 0.35);
+    background: rgba(127, 29, 29, 0.22);
+    border: 1px solid rgba(248, 113, 113, 0.32);
+  }
+  .fb-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 600;
   }
   .feedback code {
     font-family: ui-monospace, "Cascadia Code", monospace;
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     color: #c7f9cc;
     word-break: break-word;
   }
+  .fp {
+    font-family: ui-monospace, monospace;
+    font-size: 0.72rem;
+    color: #8fd3a6;
+    word-break: break-all;
+  }
 
   .privacy {
-    margin: 1.4rem 0 0;
-    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    margin: 1.5rem 0 0;
     font-size: 0.76rem;
     color: #6f7b96;
   }

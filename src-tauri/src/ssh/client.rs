@@ -1,11 +1,11 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use russh::client::{self, Handler};
 use russh::ChannelMsg;
 use serde::{Deserialize, Serialize};
 
-/// Profil de connexion envoyé par le frontend.
+/// Profil de connexion résolu (secrets déjà chargés depuis le keyring / le fichier).
 #[derive(Debug, Clone, Deserialize)]
 pub struct SshProfile {
     pub host: String,
@@ -19,9 +19,11 @@ fn default_port() -> u16 {
     22
 }
 
-/// Méthode d'authentification choisie par l'utilisateur.
+/// Méthode d'authentification.
 ///
-/// Le mot de passe n'est utilisé que pour le bootstrap (durcissement) et n'est jamais persisté.
+/// - `Key { path }` : charge la clé depuis un fichier (flux d'import).
+/// - `KeyContent { pem }` : clé déjà en mémoire (chargée depuis le keyring).
+/// - `Password` : bootstrap uniquement, jamais persisté.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum AuthInput {
@@ -32,6 +34,10 @@ pub enum AuthInput {
         path: String,
         passphrase: Option<String>,
     },
+    KeyContent {
+        pem: String,
+        passphrase: Option<String>,
+    },
 }
 
 /// Résultat d'une commande distante.
@@ -40,6 +46,13 @@ pub struct SshResult {
     pub stdout: String,
     pub stderr: String,
     pub exit_code: u32,
+}
+
+/// Résultat d'une connexion : sortie + empreinte de la clé d'hôte observée.
+#[derive(Debug, Serialize)]
+pub struct ExecOutcome {
+    pub result: SshResult,
+    pub host_key_fp: String,
 }
 
 /// Erreurs de connexion, sérialisées en message clair pour le frontend.
@@ -53,6 +66,11 @@ pub enum SshError {
     Key(String),
     #[error("Délai de connexion dépassé")]
     Timeout,
+    #[error(
+        "La clé d'hôte du serveur a changé ! Attendu {expected}, reçu {got}. \
+         Possible attaque de l'intermédiaire (MITM) — connexion bloquée."
+    )]
+    HostKeyChanged { expected: String, got: String },
     #[error("Erreur SSH : {0}")]
     Protocol(String),
 }
@@ -63,8 +81,17 @@ impl Serialize for SshError {
     }
 }
 
-/// Handler minimal : accepte la clé d'hôte (le pinning TOFU viendra en M1.x).
-struct ClientHandler;
+#[derive(Default)]
+struct HostKeyState {
+    seen_fp: Option<String>,
+    expected: Option<String>,
+    mismatch: bool,
+}
+
+/// Handler qui capture l'empreinte de la clé d'hôte et applique le pinning TOFU.
+struct ClientHandler {
+    state: Arc<Mutex<HostKeyState>>,
+}
 
 #[async_trait::async_trait]
 impl Handler for ClientHandler {
@@ -72,30 +99,59 @@ impl Handler for ClientHandler {
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh_keys::key::PublicKey,
+        server_public_key: &russh_keys::key::PublicKey,
     ) -> Result<bool, Self::Error> {
-        // TODO(M1.x) : afficher l'empreinte à l'utilisateur et l'épingler (TOFU).
+        let fp = server_public_key.fingerprint();
+        let mut st = self.state.lock().unwrap();
+        st.seen_fp = Some(fp.clone());
+        if let Some(expected) = &st.expected {
+            if expected != &fp {
+                st.mismatch = true;
+                return Ok(false); // rejette la connexion : clé d'hôte différente
+            }
+        }
         Ok(true)
     }
 }
 
-/// Se connecte au serveur et exécute `command`, en renvoyant la sortie.
-pub async fn exec(profile: &SshProfile, command: &str) -> Result<SshResult, SshError> {
+/// Se connecte, applique le pinning TOFU (`expected_fp`), exécute `command`, renvoie la sortie
+/// et l'empreinte de la clé d'hôte observée.
+pub async fn exec(
+    profile: &SshProfile,
+    command: &str,
+    expected_fp: Option<&str>,
+) -> Result<ExecOutcome, SshError> {
     let config = Arc::new(client::Config {
         inactivity_timeout: Some(Duration::from_secs(30)),
         ..Default::default()
     });
 
-    let addr = (profile.host.as_str(), profile.port);
-
-    let connect = client::connect(config, addr, ClientHandler);
-    let mut session = match tokio::time::timeout(Duration::from_secs(15), connect).await {
-        Err(_) => return Err(SshError::Timeout),
-        Ok(Err(e)) => return Err(SshError::Connect(profile.host.clone(), e.to_string())),
-        Ok(Ok(s)) => s,
+    let state = Arc::new(Mutex::new(HostKeyState {
+        expected: expected_fp.map(|s| s.to_string()),
+        ..Default::default()
+    }));
+    let handler = ClientHandler {
+        state: state.clone(),
     };
 
-    // Authentification
+    let addr = (profile.host.as_str(), profile.port);
+    let connect = client::connect(config, addr, handler);
+    let mut session = match tokio::time::timeout(Duration::from_secs(15), connect).await {
+        Err(_) => return Err(SshError::Timeout),
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            // Distingue le changement de clé d'hôte des autres erreurs de connexion.
+            let st = state.lock().unwrap();
+            if st.mismatch {
+                return Err(SshError::HostKeyChanged {
+                    expected: st.expected.clone().unwrap_or_default(),
+                    got: st.seen_fp.clone().unwrap_or_default(),
+                });
+            }
+            return Err(SshError::Connect(profile.host.clone(), e.to_string()));
+        }
+    };
+
     let authenticated = match &profile.auth {
         AuthInput::Password { password } => session
             .authenticate_password(&profile.username, password)
@@ -109,13 +165,20 @@ pub async fn exec(profile: &SshProfile, command: &str) -> Result<SshResult, SshE
                 .await
                 .map_err(|e| SshError::Protocol(e.to_string()))?
         }
+        AuthInput::KeyContent { pem, passphrase } => {
+            let key = russh_keys::decode_secret_key(pem, passphrase.as_deref())
+                .map_err(|e| SshError::Key(e.to_string()))?;
+            session
+                .authenticate_publickey(&profile.username, Arc::new(key))
+                .await
+                .map_err(|e| SshError::Protocol(e.to_string()))?
+        }
     };
 
     if !authenticated {
         return Err(SshError::Auth);
     }
 
-    // Ouverture d'un canal et exécution
     let mut channel = session
         .channel_open_session()
         .await
@@ -138,9 +201,14 @@ pub async fn exec(profile: &SshProfile, command: &str) -> Result<SshResult, SshE
         }
     }
 
-    Ok(SshResult {
-        stdout: String::from_utf8_lossy(&stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&stderr).into_owned(),
-        exit_code,
+    let host_key_fp = state.lock().unwrap().seen_fp.clone().unwrap_or_default();
+
+    Ok(ExecOutcome {
+        result: SshResult {
+            stdout: String::from_utf8_lossy(&stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&stderr).into_owned(),
+            exit_code,
+        },
+        host_key_fp,
     })
 }
