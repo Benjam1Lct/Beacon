@@ -44,12 +44,17 @@
       : 0,
   );
 
-  // Courbe lisse (spline Catmull-Rom -> Bézier) : renvoie ligne + aire remplie.
-  function smooth(vals: number[], max: number): { line: string; area: string } {
+  // Courbe lisse (Catmull-Rom -> Bézier), en miroir autour d'une ligne centrale (y=20).
+  // dir = -1 : vers le haut (upload) ; dir = +1 : vers le bas (download).
+  const CENTER = 20;
+  const AMP = 17;
+  function curve(vals: number[], max: number, dir: number): { line: string; area: string } {
     const n = vals.length;
     if (n < 2) return { line: "", area: "" };
     const step = 100 / (n - 1);
-    const p = vals.map((v, i) => [i * step, 28 - (v / Math.max(max, 1)) * 25] as [number, number]);
+    const p = vals.map(
+      (v, i) => [i * step, CENTER + dir * (v / Math.max(max, 1)) * AMP] as [number, number],
+    );
     let d = `M${p[0][0].toFixed(2)},${p[0][1].toFixed(2)}`;
     for (let i = 0; i < n - 1; i++) {
       const p0 = p[i - 1] ?? p[i];
@@ -62,12 +67,12 @@
       const c2y = p2[1] - (p3[1] - p1[1]) / 6;
       d += ` C${c1x.toFixed(2)},${c1y.toFixed(2)} ${c2x.toFixed(2)},${c2y.toFixed(2)} ${p2[0].toFixed(2)},${p2[1].toFixed(2)}`;
     }
-    return { line: d, area: `${d} L100,30 L0,30 Z` };
+    return { line: d, area: `${d} L100,${CENTER} L0,${CENTER} Z` };
   }
 
   const netMax = $derived(Math.max(1, ...netUp, ...netDown));
-  const upCurve = $derived(smooth(netUp, netMax));
-  const downCurve = $derived(smooth(netDown, netMax));
+  const upCurve = $derived(curve(netUp, netMax, -1));
+  const downCurve = $derived(curve(netDown, netMax, 1));
 
   function fmtBytes(b: number): string {
     const u = ["o", "Ko", "Mo", "Go", "To"];
@@ -193,24 +198,23 @@
     <!-- Réseau -->
     <div class="w" in:fly={{ x: -16, duration: 420, delay: 210, easing: quintOut }}>
       <div class="w-head"><span>Réseau</span><span class="iface">eth0</span></div>
-      <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none">
+      <svg class="spark" viewBox="0 0 100 40" preserveAspectRatio="none">
         <defs>
-          <linearGradient id="net-down" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#2dd4bf" stop-opacity="0.4" />
-            <stop offset="1" stop-color="#2dd4bf" stop-opacity="0" />
-          </linearGradient>
           <linearGradient id="net-up" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#4ade80" stop-opacity="0.32" />
-            <stop offset="1" stop-color="#4ade80" stop-opacity="0" />
+            <stop offset="0" stop-color="#4ade80" stop-opacity="0.45" />
+            <stop offset="1" stop-color="#4ade80" stop-opacity="0.02" />
+          </linearGradient>
+          <linearGradient id="net-down" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0" stop-color="#2dd4bf" stop-opacity="0.45" />
+            <stop offset="1" stop-color="#2dd4bf" stop-opacity="0.02" />
           </linearGradient>
         </defs>
-        <line x1="0" y1="10" x2="100" y2="10" class="grid" />
         <line x1="0" y1="20" x2="100" y2="20" class="grid" />
-        {#if netDown.length > 1}
-          <path d={downCurve.area} fill="url(#net-down)" />
+        {#if netUp.length > 1}
           <path d={upCurve.area} fill="url(#net-up)" />
-          <path d={downCurve.line} fill="none" stroke="#2dd4bf" stroke-width="1.4" />
-          <path d={upCurve.line} fill="none" stroke="#4ade80" stroke-width="1.4" />
+          <path d={downCurve.area} fill="url(#net-down)" />
+          <path d={upCurve.line} fill="none" stroke="#4ade80" stroke-width="1.2" />
+          <path d={downCurve.line} fill="none" stroke="#2dd4bf" stroke-width="1.2" />
         {/if}
       </svg>
       <div class="net-rates">

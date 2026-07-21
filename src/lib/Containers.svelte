@@ -23,8 +23,12 @@
   type Folder = { id: string; name: string };
   let folders = $state<Folder[]>([]);
   let assign = $state<Record<string, string>>({});
-  let newFolder = $state("");
-  let creating = $state(false);
+
+  // Drag & drop + ouverture de dossier
+  let dragged = $state<string | null>(null);
+  let dragOver = $state<string | null>(null);
+  let openFolderId = $state<string | null>(null);
+  let editName = $state("");
 
   const FK = $derived(`beacon.folders.${profileId}`);
   const AK = $derived(`beacon.assign.${profileId}`);
@@ -63,13 +67,14 @@
     }
   }
 
-  function addFolder() {
-    const name = newFolder.trim();
-    if (!name) return;
-    const id = crypto.randomUUID?.() ?? `f${folders.length}-${name}`;
-    folders = [...folders, { id, name }];
-    newFolder = "";
-    creating = false;
+  const openFolder = $derived(groups.folders.find((f) => f.id === openFolderId) ?? null);
+
+  /** Superposer deux conteneurs -> crée un dossier avec un nom par défaut. */
+  function createFolderWith(a: string, b: string) {
+    if (a === b) return;
+    const id = crypto.randomUUID?.() ?? `f-${a}-${b}`;
+    folders = [...folders, { id, name: "Dossier" }];
+    assign = { ...assign, [a]: id, [b]: id };
     persist();
   }
 
@@ -77,6 +82,7 @@
     folders = folders.filter((f) => f.id !== id);
     for (const k of Object.keys(assign)) if (assign[k] === id) delete assign[k];
     assign = { ...assign };
+    if (openFolderId === id) openFolderId = null;
     persist();
   }
 
@@ -85,6 +91,33 @@
     else delete assign[name];
     assign = { ...assign };
     persist();
+    pruneEmpty();
+  }
+
+  /** Supprime les dossiers qui n'ont plus aucun conteneur existant. */
+  function pruneEmpty() {
+    const names = new Set((status?.containers ?? []).map((c) => c.name));
+    const used = new Set(
+      Object.entries(assign)
+        .filter(([n]) => names.has(n))
+        .map(([, fid]) => fid),
+    );
+    const kept = folders.filter((f) => used.has(f.id));
+    if (kept.length !== folders.length) {
+      folders = kept;
+      if (openFolderId && !used.has(openFolderId)) openFolderId = null;
+      persist();
+    }
+  }
+
+  function openFolderView(id: string, name: string) {
+    openFolderId = id;
+    editName = name;
+  }
+  function saveName() {
+    const nm = editName.trim();
+    folders = folders.map((f) => (f.id === openFolderId ? { ...f, name: nm || f.name } : f));
+    persist();
   }
 
   async function load() {
@@ -92,6 +125,7 @@
       status = await dockerList(profileId, password);
       error = null;
       if (selected) selected = status.containers.find((c) => c.id === selected!.id) ?? null;
+      pruneEmpty();
     } catch (e) {
       error = String(e);
     } finally {
@@ -153,22 +187,10 @@
       Conteneurs
       {#if status?.installed && status.containers.length}<span class="count">{running}/{status.containers.length} actifs</span>{/if}
     </h2>
-    <div class="head-actions">
-      {#if status?.installed && status.containers.length}
-        <button class="chip" onclick={() => (creating = !creating)}><Icon name="folder" size={15} /> Dossier</button>
-      {/if}
-      <button class="icon-btn" title="Rafraîchir" onclick={load} disabled={loading}>
-        <Icon name="refresh" size={17} spin={loading && !status} />
-      </button>
-    </div>
+    <button class="icon-btn" title="Rafraîchir" onclick={load} disabled={loading}>
+      <Icon name="refresh" size={17} spin={loading && !status} />
+    </button>
   </div>
-
-  {#if creating}
-    <form class="new-folder" transition:slide={{ duration: 200 }} onsubmit={(e) => { e.preventDefault(); addFolder(); }}>
-      <input bind:value={newFolder} placeholder="Nom du dossier…" autocomplete="off" />
-      <button class="chip solid" type="submit">Créer</button>
-    </form>
-  {/if}
 
   {#if loading && !status}
     <div class="state"><Icon name="spinner" size={22} spin /> Lecture de Docker…</div>
@@ -183,43 +205,115 @@
   {:else if status && status.containers.length === 0}
     <div class="state"><Icon name="server" size={26} /><p>Aucun conteneur.</p></div>
   {:else if status}
-    {#each groups.folders as f (f.id)}
-      <div class="folder" transition:slide={{ duration: 200 }}>
-        <div class="folder-head">
-          <span><Icon name="folder" size={15} /> {f.name} <span class="count">{f.items.length}</span></span>
-          <button class="mini" title="Supprimer le dossier" onclick={() => removeFolder(f.id)}><Icon name="close" size={14} /></button>
-        </div>
-        {#if f.items.length}
-          <div class="tiles">
-            {#each f.items as c (c.id)}
-              {@render tile(c)}
+    <p class="hint-drag">Astuce : glisse un conteneur sur un autre pour créer un dossier.</p>
+    <div class="tiles">
+      {#each groups.folders as f (f.id)}
+        <button
+          class="fcard"
+          class:drop={dragOver === "f:" + f.id}
+          onclick={() => openFolderView(f.id, f.name)}
+          ondragover={(e) => {
+            e.preventDefault();
+            dragOver = "f:" + f.id;
+          }}
+          ondragleave={() => {
+            if (dragOver === "f:" + f.id) dragOver = null;
+          }}
+          ondrop={() => {
+            if (dragged) moveTo(dragged, f.id);
+            dragOver = null;
+          }}
+        >
+          <span class="fprev">
+            {#each f.items.slice(0, 4) as c (c.id)}
+              <span class="fmini" class:on={c.state === "running"}></span>
             {/each}
-          </div>
-        {:else}
-          <p class="folder-empty">Vide — déplace un conteneur ici depuis son détail.</p>
-        {/if}
-      </div>
-    {/each}
+            {#if f.items.length === 0}<span class="fmini empty"></span>{/if}
+          </span>
+          <span class="tile-name">{f.name}</span>
+        </button>
+      {/each}
 
-    {#if groups.ungrouped.length}
-      <div class="tiles top">
-        {#each groups.ungrouped as c (c.id)}
-          {@render tile(c)}
-        {/each}
-      </div>
-    {/if}
+      {#each groups.ungrouped as c (c.id)}
+        <button
+          class="tile"
+          class:drop={dragOver === "c:" + c.name}
+          class:dragging={dragged === c.name}
+          draggable="true"
+          onclick={() => open(c)}
+          ondragstart={(e) => {
+            dragged = c.name;
+            if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+          }}
+          ondragend={() => {
+            dragged = null;
+            dragOver = null;
+          }}
+          ondragover={(e) => {
+            if (dragged && dragged !== c.name) {
+              e.preventDefault();
+              dragOver = "c:" + c.name;
+            }
+          }}
+          ondragleave={() => {
+            if (dragOver === "c:" + c.name) dragOver = null;
+          }}
+          ondrop={() => {
+            if (dragged && dragged !== c.name) createFolderWith(dragged, c.name);
+            dragOver = null;
+          }}
+          in:fly={{ y: 10, duration: 240, easing: quintOut }}
+        >
+          <span class="tile-icon" class:on={c.state === "running"}>
+            <Icon name="server" size={26} />
+            <span class="dot" class:running={c.state === "running"}></span>
+          </span>
+          <span class="tile-name">{c.name}</span>
+        </button>
+      {/each}
+    </div>
   {/if}
 </section>
 
-{#snippet tile(c: Container)}
-  <button class="tile" onclick={() => open(c)} in:fly={{ y: 10, duration: 240, easing: quintOut }}>
-    <span class="tile-icon" class:on={c.state === "running"}>
-      <Icon name="server" size={26} />
-      <span class="dot" class:running={c.state === "running"}></span>
-    </span>
-    <span class="tile-name">{c.name}</span>
-  </button>
-{/snippet}
+{#if openFolder}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div
+    class="overlay"
+    role="presentation"
+    transition:fade={{ duration: 150 }}
+    onclick={(e) => {
+      if (e.target === e.currentTarget) {
+        saveName();
+        openFolderId = null;
+      }
+    }}
+  >
+    <div class="modal folder-modal" role="dialog" aria-modal="true" transition:scale={{ duration: 200, start: 0.95, easing: quintOut }}>
+      <div class="modal-head">
+        <span class="folder-badge"><Icon name="folder" size={20} /></span>
+        <input class="folder-name" bind:value={editName} onblur={saveName} aria-label="Nom du dossier" />
+        <button class="icon-btn danger" title="Supprimer le dossier" onclick={() => removeFolder(openFolder.id)}>
+          <Icon name="trash" size={16} />
+        </button>
+        <button class="icon-btn" onclick={() => { saveName(); openFolderId = null; }}><Icon name="close" size={18} /></button>
+      </div>
+      <div class="tiles">
+        {#each openFolder.items as c (c.id)}
+          <div class="tile-wrap">
+            <button class="tile" onclick={() => open(c)}>
+              <span class="tile-icon" class:on={c.state === "running"}>
+                <Icon name="server" size={26} />
+                <span class="dot" class:running={c.state === "running"}></span>
+              </span>
+              <span class="tile-name">{c.name}</span>
+            </button>
+            <button class="pull" title="Sortir du dossier" onclick={() => moveTo(c.name, "")}><Icon name="close" size={12} /></button>
+          </div>
+        {/each}
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#if selected}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -294,10 +388,6 @@
     justify-content: space-between;
     margin-bottom: 1rem;
   }
-  .head-actions {
-    display: flex;
-    gap: 0.4rem;
-  }
   h2 {
     margin: 0;
     font-size: 1.1rem;
@@ -309,26 +399,6 @@
     font-size: 0.76rem;
     color: rgba(255, 255, 255, 0.45);
     font-weight: 400;
-  }
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.4rem 0.7rem;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 9px;
-    background: rgba(255, 255, 255, 0.05);
-    color: #e7ecf3;
-    font-size: 0.82rem;
-    cursor: pointer;
-  }
-  .chip:hover {
-    background: rgba(255, 255, 255, 0.12);
-  }
-  .chip.solid {
-    background: #fff;
-    color: #000;
-    border-color: transparent;
   }
   .icon-btn {
     display: grid;
@@ -344,21 +414,9 @@
   .icon-btn:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.12);
   }
-
-  .new-folder {
-    display: flex;
-    gap: 0.4rem;
-    margin-bottom: 1rem;
-  }
-  .new-folder input {
-    flex: 1;
-    padding: 0.55rem 0.75rem;
-    border-radius: 9px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(0, 0, 0, 0.35);
-    color: #f4f4f5;
-    font-size: 0.86rem;
-    outline: none;
+  .icon-btn.danger:hover {
+    background: rgba(220, 38, 38, 0.18);
+    color: #fca5a5;
   }
 
   .state {
@@ -387,50 +445,114 @@
     font-size: 0.8rem;
   }
 
-  .folder {
-    margin-bottom: 1rem;
-  }
-  .folder-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 0.85rem;
-    margin-bottom: 0.6rem;
-  }
-  .folder-head > span {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-  .mini {
-    display: grid;
-    place-items: center;
-    width: 24px;
-    height: 24px;
-    border: none;
-    border-radius: 7px;
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.6);
-    cursor: pointer;
-  }
-  .mini:hover {
-    background: rgba(255, 90, 90, 0.18);
-    color: #fca5a5;
-  }
-  .folder-empty {
-    margin: 0;
+  .hint-drag {
+    margin: 0 0 1rem;
     font-size: 0.78rem;
     color: rgba(255, 255, 255, 0.35);
+  }
+
+  /* Carte de dossier */
+  .fcard {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.45rem;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    padding: 0;
+    color: #cdd6e6;
+    transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .fcard:hover {
+    transform: translateY(-3px);
+  }
+  .fprev {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-auto-rows: 1fr;
+    gap: 4px;
+    width: 60px;
+    height: 60px;
+    padding: 8px;
+    border-radius: 17px;
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  }
+  .fmini {
+    border-radius: 5px;
+    background: #4b5563;
+  }
+  .fmini.on {
+    background: #2dd4bf;
+  }
+  .fmini.empty {
+    grid-column: 1 / -1;
+    background: transparent;
+  }
+
+  .drop .tile-icon,
+  .fcard.drop .fprev {
+    outline: 2px solid #4ade80;
+    outline-offset: 2px;
+  }
+  .dragging {
+    opacity: 0.4;
+  }
+
+  .folder-badge {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #cdd6e6;
+  }
+  .folder-name {
+    flex: 1;
+    min-width: 0;
+    padding: 0.4rem 0.6rem;
+    border-radius: 9px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #fff;
+    font-size: 1.05rem;
+    font-weight: 600;
+    outline: none;
+  }
+  .folder-name:hover,
+  .folder-name:focus {
+    background: rgba(0, 0, 0, 0.4);
+    border-color: rgba(255, 255, 255, 0.14);
+  }
+  .tile-wrap {
+    position: relative;
+  }
+  .pull {
+    position: absolute;
+    top: -4px;
+    right: 6px;
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    cursor: pointer;
+  }
+  .pull:hover {
+    background: rgba(220, 38, 38, 0.8);
   }
 
   .tiles {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
     gap: 1rem;
-  }
-  .tiles.top {
-    margin-top: 0.2rem;
   }
   .tile {
     display: flex;
