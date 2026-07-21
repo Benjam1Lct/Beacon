@@ -26,6 +26,21 @@
   let deployErr = $state<string | null>(null);
   let deployOk = $state<string | null>(null);
 
+  let query = $state("");
+  let failed = $state<Record<string, boolean>>({});
+
+  const filtered = $derived.by(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return CATALOG;
+    return CATALOG.filter(
+      (a) =>
+        a.name.toLowerCase().includes(q) ||
+        a.category.toLowerCase().includes(q) ||
+        a.description.toLowerCase().includes(q) ||
+        a.image.toLowerCase().includes(q),
+    );
+  });
+
   async function checkDocker() {
     try {
       const s = await dockerList(profileId, password);
@@ -92,6 +107,20 @@
   onMount(checkDocker);
 </script>
 
+{#snippet appIcon(app: AppTemplate, size: number)}
+  {#if failed[app.id]}
+    <span class="mono" style="background:{app.color};width:{size}px;height:{size}px">{app.mono}</span>
+  {:else}
+    <span class="icon-tile" style="width:{size}px;height:{size}px">
+      <img
+        src="/icons/{app.id}.svg"
+        alt={app.name}
+        onerror={() => (failed = { ...failed, [app.id]: true })}
+      />
+    </span>
+  {/if}
+{/snippet}
+
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
   class="overlay"
@@ -128,7 +157,7 @@
     {:else if selected}
       <div class="config" in:fly={{ y: 10, duration: 220, easing: quintOut }}>
         <div class="cfg-head">
-          <span class="mono" style="background:{selected.color}">{selected.mono}</span>
+          {@render appIcon(selected, 46)}
           <div>
             <strong>{selected.name}</strong>
             <span class="muted">{selected.image}</span>
@@ -177,18 +206,28 @@
         {/if}
       </div>
     {:else}
-      <div class="grid">
-        {#each CATALOG as app, i (app.id)}
-          <button class="card" onclick={() => selectApp(app)} in:fly={{ y: 12, duration: 260, delay: Math.min(i, 10) * 30, easing: quintOut }}>
-            <span class="mono" style="background:{app.color}">{app.mono}</span>
-            <div class="card-body">
-              <strong>{app.name}</strong>
-              <span class="cat">{app.category}</span>
-              <span class="desc">{app.description}</span>
-            </div>
-          </button>
-        {/each}
+      <div class="search">
+        <Icon name="search" size={18} />
+        <input bind:value={query} placeholder="Rechercher une application…" autocomplete="off" />
+        {#if query}<button class="clear" onclick={() => (query = "")}><Icon name="close" size={15} /></button>{/if}
       </div>
+
+      {#if filtered.length === 0}
+        <div class="state">Aucune application ne correspond à « {query} ».</div>
+      {:else}
+        <div class="grid">
+          {#each filtered as app, i (app.id)}
+            <button class="card" onclick={() => selectApp(app)} in:fly={{ y: 12, duration: 240, delay: Math.min(i, 10) * 25, easing: quintOut }}>
+              {@render appIcon(app, 46)}
+              <div class="card-body">
+                <strong>{app.name}</strong>
+                <span class="cat">{app.category}</span>
+                <span class="desc">{app.description}</span>
+              </div>
+            </button>
+          {/each}
+        </div>
+      {/if}
     {/if}
   </div>
 </div>
@@ -282,6 +321,55 @@
   }
   .install .muted {
     max-width: 420px;
+  }
+
+  .search {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.7rem 1rem;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.5);
+    margin-bottom: 1rem;
+  }
+  .search input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: #f4f4f5;
+    font-size: 0.92rem;
+    outline: none;
+  }
+  .clear {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #cdd6e6;
+    cursor: pointer;
+  }
+  .clear:hover {
+    background: rgba(255, 255, 255, 0.16);
+  }
+
+  .icon-tile {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    border-radius: 13px;
+    background: #fff;
+    padding: 9px;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.4);
+  }
+  .icon-tile img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
   }
 
   .grid {
