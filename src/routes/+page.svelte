@@ -429,14 +429,14 @@
 <style>
   main {
     min-height: 100vh;
-    display: grid;
-    place-items: start center;
-    padding: 3rem 1rem 3rem;
+    display: flex;
+    padding: 2rem 1rem;
     color: #f4f4f5;
   }
   .shell {
     width: 100%;
     max-width: 640px;
+    margin: auto;
   }
 
   header {
