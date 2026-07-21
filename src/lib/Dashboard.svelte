@@ -257,8 +257,6 @@
         <button class="btn" onclick={onBack}>Retour</button>
       </div>
     {:else}
-      <Containers profileId={profile.id} {password} />
-
       <section class="apps-panel" in:fly={{ y: 14, duration: 360, easing: quintOut }}>
         <div class="apps-head">
           <h2>Applications</h2>
@@ -281,6 +279,8 @@
           <Icon name="apps" size={14} /> Applications intégrées — l'App Store 1-clic arrive au prochain jalon.
         </p>
       </section>
+
+      <Containers profileId={profile.id} {password} />
     {/if}
   </main>
 </div>
@@ -586,6 +586,7 @@
     border: 1px solid rgba(255, 255, 255, 0.08);
     backdrop-filter: blur(22px) saturate(1.1);
     -webkit-backdrop-filter: blur(22px) saturate(1.1);
+    margin-bottom: 1.4rem;
   }
   .apps-head {
     display: flex;
