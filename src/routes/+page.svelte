@@ -452,8 +452,14 @@
 </main>
 
 <style>
+  :global(*) {
+    box-sizing: border-box;
+  }
+  :global(html),
   :global(body) {
     margin: 0;
+    height: 100%;
+    overflow-x: hidden;
   }
   main {
     min-height: 100vh;
