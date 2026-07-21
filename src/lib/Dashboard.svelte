@@ -196,8 +196,12 @@
     <div class="server-hero">
       <div class="hero-icon"><Icon name="server" size={26} /></div>
       <div class="hero-info">
-        <strong>{metrics?.hostname || profile.label}</strong>
-        <span>{profile.username}@{profile.host}:{profile.port}</span>
+        <strong>{profile.label}</strong>
+        <span>
+          {profile.username}@{profile.host}:{profile.port}{#if metrics?.hostname}
+            <span class="hn" title="Hostname du serveur">· {metrics.hostname}</span>
+          {/if}
+        </span>
       </div>
       {#if error && metrics}
         <span class="hero-warn"><Icon name="spinner" size={13} spin /> reconnexion…</span>
@@ -502,6 +506,9 @@
   .hero-info span {
     color: #8695b3;
     font-size: 0.82rem;
+  }
+  .hn {
+    color: rgba(255, 255, 255, 0.32);
   }
   .hero-warn {
     display: inline-flex;
