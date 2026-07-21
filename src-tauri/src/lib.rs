@@ -22,6 +22,8 @@ pub fn run() {
             commands::docker_list,
             commands::docker_action,
             commands::docker_logs,
+            commands::deploy_app,
+            commands::install_docker,
             commands::open_ssh_terminal,
             commands::harden_bootstrap,
         ])

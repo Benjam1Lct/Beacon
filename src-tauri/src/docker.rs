@@ -180,3 +180,84 @@ pub fn logs_cmd(container: &str, tail: u32) -> Option<String> {
     let tail = tail.clamp(1, 1000);
     Some(format!("docker logs --tail {tail} '{container}' 2>&1"))
 }
+
+// ---- App Store : déploiement (§M4) -----------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct PortMap {
+    pub host: u16,
+    pub container: u16,
+}
+
+#[derive(Deserialize)]
+pub struct EnvVar {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Deserialize)]
+pub struct DeployConfig {
+    pub name: String,
+    pub image: String,
+    #[serde(default)]
+    pub ports: Vec<PortMap>,
+    #[serde(default)]
+    pub env: Vec<EnvVar>,
+    #[serde(default)]
+    pub volumes: Vec<String>,
+}
+
+fn valid_image(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 200
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | ':' | '.' | '-' | '_'))
+}
+
+fn valid_env_key(s: &str) -> bool {
+    !s.is_empty() && s.len() <= 100 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn valid_volume(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 200
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | ':' | '.' | '-' | '_'))
+}
+
+fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Construit la commande `docker run` après validation stricte (anti-injection).
+pub fn run_cmd(cfg: &DeployConfig) -> Option<String> {
+    if !valid_ref(&cfg.name) || !valid_image(&cfg.image) {
+        return None;
+    }
+    let mut c = format!("docker run -d --name {} --restart unless-stopped", cfg.name);
+    for p in &cfg.ports {
+        c.push_str(&format!(" -p {}:{}", p.host, p.container));
+    }
+    for e in &cfg.env {
+        if !valid_env_key(&e.key) {
+            return None;
+        }
+        c.push_str(&format!(" -e {}={}", e.key, sh_quote(&e.value)));
+    }
+    for v in &cfg.volumes {
+        if !valid_volume(v) {
+            return None;
+        }
+        c.push_str(&format!(" -v {v}"));
+    }
+    c.push_str(&format!(" {}", cfg.image));
+    Some(c)
+}
+
+/// Commande d'installation de Docker (script officiel get.docker.com), root ou sudo.
+pub const INSTALL_CMD: &str = "set -e\n\
+     if command -v docker >/dev/null 2>&1; then echo ALREADY; exit 0; fi\n\
+     curl -fsSL https://get.docker.com -o /tmp/get-docker.sh\n\
+     if [ \"$(id -u)\" = 0 ]; then sh /tmp/get-docker.sh; else sudo -n sh /tmp/get-docker.sh; sudo -n usermod -aG docker \"$USER\" || true; fi\n\
+     rm -f /tmp/get-docker.sh\n\
+     echo DONE";

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use tauri::{AppHandle, Manager};
 
-use crate::docker::{self, DockerStatus};
+use crate::docker::{self, DeployConfig, DockerStatus};
 use crate::hardening::{self, HardenInput, HardeningReport};
 use crate::monitor::{self, Metrics};
 use crate::secrets::{self, KeySecret};
@@ -236,6 +236,47 @@ pub async fn docker_action(
         .map_err(|e| e.to_string())?;
     if out.result.exit_code == 0 {
         Ok(())
+    } else {
+        Err(out.result.stderr.trim().to_string())
+    }
+}
+
+/// Déploie une app du catalogue : construit et lance un `docker run` sur le serveur.
+/// Renvoie l'ID du conteneur créé.
+#[tauri::command]
+pub async fn deploy_app(
+    app: AppHandle,
+    id: String,
+    config: DeployConfig,
+    password: Option<String>,
+) -> Result<String, String> {
+    let cmd = docker::run_cmd(&config).ok_or_else(|| "Configuration invalide".to_string())?;
+    let dir = data_dir(&app)?;
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
+    let out = ssh::exec(&profile, &cmd, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    if out.result.exit_code == 0 {
+        Ok(out.result.stdout.trim().to_string())
+    } else {
+        Err(out.result.stderr.trim().to_string())
+    }
+}
+
+/// Installe Docker sur le serveur (script officiel get.docker.com).
+#[tauri::command]
+pub async fn install_docker(
+    app: AppHandle,
+    id: String,
+    password: Option<String>,
+) -> Result<String, String> {
+    let dir = data_dir(&app)?;
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
+    let out = ssh::exec(&profile, docker::INSTALL_CMD, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    if out.result.exit_code == 0 {
+        Ok(out.result.stdout.trim().to_string())
     } else {
         Err(out.result.stderr.trim().to_string())
     }

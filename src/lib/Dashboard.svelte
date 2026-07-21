@@ -7,6 +7,7 @@
   import HddImage from "$lib/HddImage.svelte";
   import AppIcon from "$lib/AppIcon.svelte";
   import Containers from "$lib/Containers.svelte";
+  import AppStore from "$lib/AppStore.svelte";
   import { fetchMetrics } from "$lib/api";
   import type { Metrics, ProfileMeta } from "$lib/types";
 
@@ -27,6 +28,7 @@
   let netDown = $state<number[]>([]);
 
   let clock = $state(new Date());
+  let storeOpen = $state(false);
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let clockTimer: ReturnType<typeof setInterval> | null = null;
@@ -267,7 +269,8 @@
             <button
               class="tile"
               type="button"
-              title="Bientôt disponible"
+              title={app.key === "appstore" ? "Ouvrir l'App Store" : "Bientôt disponible"}
+              onclick={() => app.key === "appstore" && (storeOpen = true)}
               in:fly={{ y: 16, duration: 340, delay: i * 45, easing: quintOut }}
             >
               <span class="tile-icon"><AppIcon name={app.key} size={60} /></span>
@@ -284,6 +287,10 @@
     {/if}
   </main>
 </div>
+
+{#if storeOpen}
+  <AppStore profileId={profile.id} {password} onClose={() => (storeOpen = false)} onDeployed={() => {}} />
+{/if}
 
 <style>
   .zos {

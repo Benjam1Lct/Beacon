@@ -63,6 +63,20 @@ export function dockerAction(
   return invoke<void>("docker_action", { id, container, action, password: password ?? null });
 }
 
+/** Déploie une app du catalogue (docker run). Renvoie l'ID du conteneur. */
+export function deployApp(
+  id: string,
+  config: import("./catalog").DeployConfig,
+  password?: string,
+): Promise<string> {
+  return invoke<string>("deploy_app", { id, config, password: password ?? null });
+}
+
+/** Installe Docker sur le serveur (script officiel). */
+export function installDocker(id: string, password?: string): Promise<string> {
+  return invoke<string>("install_docker", { id, password: password ?? null });
+}
+
 /** Derniers logs d'un conteneur. */
 export function dockerLogs(
   id: string,
