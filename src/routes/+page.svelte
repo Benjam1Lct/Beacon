@@ -516,10 +516,11 @@
     gap: 0.7rem;
   }
   .card {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: #fbfbfc;
+    border: 1px solid rgba(0, 0, 0, 0.06);
     border-radius: 15px;
     padding: 0.9rem 1rem;
+    color: #16181d;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -527,15 +528,45 @@
     gap: 0.7rem;
     transition:
       transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
-      background 0.22s ease,
-      border-color 0.22s ease,
       box-shadow 0.22s ease;
   }
   .card:hover {
     transform: translateY(-2px);
-    background: rgba(255, 255, 255, 0.07);
-    border-color: rgba(255, 255, 255, 0.16);
-    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.45);
+  }
+  .card .card-icon {
+    background: rgba(0, 0, 0, 0.06);
+    color: #16181d;
+  }
+  .card .sub {
+    color: rgba(0, 0, 0, 0.5);
+  }
+  .card .badge {
+    color: rgba(0, 0, 0, 0.45);
+  }
+  .card .pinned {
+    color: rgba(0, 0, 0, 0.6);
+  }
+  .card .btn.primary {
+    background: #16181d;
+    color: #fff;
+    border-color: #16181d;
+  }
+  .card .btn.primary:hover:not(:disabled) {
+    background: #000;
+  }
+  .card .btn.ghost.icon {
+    color: #dc2626;
+    border-color: rgba(220, 38, 38, 0.35);
+    background: rgba(220, 38, 38, 0.06);
+  }
+  .card .btn.ghost.icon:hover:not(:disabled) {
+    background: rgba(220, 38, 38, 0.14);
+  }
+  .card .pwd-prompt input {
+    background: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.15);
+    color: #16181d;
   }
   .card-main {
     display: flex;
