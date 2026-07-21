@@ -1,0 +1,12 @@
+# Normalise les fins de ligne : LF partout dans le repo, quel que soit l'OS.
+* text=auto eol=lf
+
+# Fichiers binaires : ne pas toucher.
+*.png binary
+*.ico binary
+*.icns binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.woff binary
+*.woff2 binary
