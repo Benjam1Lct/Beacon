@@ -18,20 +18,30 @@
   let prevNet: { rx: number; tx: number; t: number } | null = null;
   let rxRate = $state(0);
   let txRate = $state(0);
+  let spark = $state<number[]>([]);
 
-  let timer: ReturnType<typeof setInterval> | null = null;
+  let clock = $state(new Date());
+
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let clockTimer: ReturnType<typeof setInterval> | null = null;
   const POLL_MS = 4000;
 
+  const memUsedKb = $derived(metrics ? metrics.memTotalKb - metrics.memAvailableKb : 0);
   const memPercent = $derived(
-    metrics && metrics.memTotalKb > 0
-      ? (100 * (metrics.memTotalKb - metrics.memAvailableKb)) / metrics.memTotalKb
-      : 0,
+    metrics && metrics.memTotalKb > 0 ? (100 * memUsedKb) / metrics.memTotalKb : 0,
   );
   const diskPercent = $derived(
     metrics && metrics.diskTotalBytes > 0
       ? (100 * metrics.diskUsedBytes) / metrics.diskTotalBytes
       : 0,
   );
+
+  const sparkPoints = $derived.by(() => {
+    if (spark.length < 2) return "";
+    const max = Math.max(...spark, 1);
+    const step = 100 / (spark.length - 1);
+    return spark.map((v, i) => `${(i * step).toFixed(1)},${(28 - (v / max) * 26).toFixed(1)}`).join(" ");
+  });
 
   function fmtBytes(b: number): string {
     const u = ["o", "Ko", "Mo", "Go", "To"];
@@ -43,7 +53,9 @@
     }
     return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${u[i]}`;
   }
-
+  function fmtRate(b: number): string {
+    return b < 1024 ? `${Math.round(b)} o/s` : `${(b / 1024).toFixed(b < 1024 * 10 ? 1 : 0)} Ko/s`;
+  }
   function fmtUptime(s: number): string {
     const d = Math.floor(s / 86400);
     const h = Math.floor((s % 86400) / 3600);
@@ -62,6 +74,7 @@
         if (dt > 0) {
           rxRate = Math.max(0, (m.netRxBytes - prevNet.rx) / dt);
           txRate = Math.max(0, (m.netTxBytes - prevNet.tx) / dt);
+          spark = [...spark, rxRate + txRate].slice(-24);
         }
       }
       prevNet = { rx: m.netRxBytes, tx: m.netTxBytes, t: now };
@@ -76,285 +89,349 @@
 
   onMount(() => {
     poll();
-    timer = setInterval(poll, POLL_MS);
+    pollTimer = setInterval(poll, POLL_MS);
+    clockTimer = setInterval(() => (clock = new Date()), 1000);
   });
   onDestroy(() => {
-    if (timer) clearInterval(timer);
+    if (pollTimer) clearInterval(pollTimer);
+    if (clockTimer) clearInterval(clockTimer);
   });
 
-  const NAV = [
-    { icon: "grid", label: "Tableau de bord", active: true },
-    { icon: "apps", label: "Applications", active: false },
-    { icon: "link", label: "Réseau", active: false },
-    { icon: "folder", label: "Fichiers", active: false },
-    { icon: "settings", label: "Réglages", active: false },
+  const APPS = [
+    { icon: "apps", label: "App Store", color: "#3b82f6" },
+    { icon: "folder", label: "Fichiers", color: "#f5a623" },
+    { icon: "terminal", label: "Terminal", color: "#334155" },
+    { icon: "server", label: "Conteneurs", color: "#10b981" },
+    { icon: "link", label: "Réseau", color: "#8b5cf6" },
+    { icon: "settings", label: "Réglages", color: "#64748b" },
   ];
 </script>
 
-<div class="os">
-  <aside class="sidebar">
-    <div class="brand">
-      <span class="brand-icon"><Icon name="beacon" size={22} /></span>
-      <span class="brand-name">Beacon</span>
+<div class="zos">
+  <!-- Colonne widgets -->
+  <aside class="col-left">
+    <div class="left-top">
+      <span class="brand"><Icon name="beacon" size={20} /> Beacon</span>
+      <button class="icon-btn" title="Déconnecter" onclick={onBack}><Icon name="logout" size={18} /></button>
     </div>
 
-    <nav>
-      {#each NAV as item (item.label)}
-        <button class="nav" class:active={item.active} disabled={!item.active}>
-          <Icon name={item.icon} size={19} />
-          <span>{item.label}</span>
-          {#if !item.active}<span class="soon">bientôt</span>{/if}
-        </button>
-      {/each}
-    </nav>
-
-    <div class="side-foot">
-      <div class="server-chip">
-        <span class="chip-dot" class:on={!error && !loading}></span>
-        <div class="chip-info">
-          <strong>{metrics?.hostname || profile.label}</strong>
-          <span>{profile.host}</span>
-        </div>
+    <!-- Horloge -->
+    <div class="w clock">
+      <div class="time">{clock.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</div>
+      <div class="date">
+        {clock.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
       </div>
-      <button class="nav" onclick={onBack}>
-        <Icon name="logout" size={19} />
-        <span>Déconnecter</span>
-      </button>
+    </div>
+
+    <!-- Système -->
+    <div class="w">
+      <div class="w-head"><span>Système</span></div>
+      {#if metrics}
+        <div class="sys-gauges">
+          <div class="mini-gauge">
+            <Gauge value={metrics.cpuPercent} label="CPU" />
+            <span class="mini-sub">{metrics.cpuCores} cœurs</span>
+          </div>
+          <div class="mini-gauge">
+            <Gauge value={memPercent} label="RAM" />
+            <span class="mini-sub">{fmtBytes(metrics.memTotalKb * 1024)}</span>
+          </div>
+        </div>
+      {:else}
+        <div class="w-empty"><Icon name="spinner" size={20} spin /></div>
+      {/if}
+    </div>
+
+    <!-- Stockage -->
+    <div class="w">
+      <div class="w-head"><span>Stockage</span><Icon name="disk" size={15} /></div>
+      {#if metrics}
+        <div class="storage">
+          <div class="storage-row">
+            <span class="badge-ok">Sain</span>
+            <span class="storage-txt">
+              {fmtBytes(metrics.diskUsedBytes)} / {fmtBytes(metrics.diskTotalBytes)}
+            </span>
+          </div>
+          <div class="bar"><div class="bar-fill" style="width:{Math.min(100, diskPercent)}%"></div></div>
+        </div>
+      {:else}
+        <div class="w-empty"><Icon name="spinner" size={20} spin /></div>
+      {/if}
+    </div>
+
+    <!-- Réseau -->
+    <div class="w">
+      <div class="w-head"><span>Réseau</span><span class="iface">{metrics ? "eth" : ""}</span></div>
+      <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none">
+        {#if sparkPoints}
+          <polyline points={sparkPoints} fill="none" stroke="#4ade80" stroke-width="1.6" />
+        {/if}
+      </svg>
+      <div class="net-rates">
+        <span class="up"><Icon name="arrow" size={12} /> {fmtRate(txRate)}</span>
+        <span class="down"><Icon name="arrow" size={12} /> {fmtRate(rxRate)}</span>
+      </div>
+    </div>
+
+    <div class="left-foot">
+      <span>{fmtUptime(metrics?.uptimeSecs ?? 0)} d'uptime</span>
     </div>
   </aside>
 
-  <main class="content">
-    <header class="topbar">
-      <div class="tb-title">
-        <h1>{metrics?.hostname || profile.label}</h1>
-        <span class="sub">{profile.username}@{profile.host}:{profile.port}</span>
+  <!-- Zone principale -->
+  <main class="col-main">
+    <div class="topbar">
+      <div class="searchbar">
+        <Icon name="search" size={18} />
+        <input placeholder="Rechercher…" />
       </div>
       <span class="live" class:on={!error && !loading}>
         <span class="dot"></span>{error ? "hors ligne" : loading ? "…" : "en direct"}
       </span>
-    </header>
+    </div>
 
-    {#if loading && !metrics}
-      <div class="loading"><Icon name="spinner" size={28} spin /> Récupération des métriques…</div>
-    {:else if error && !metrics}
+    <div class="server-hero">
+      <div class="hero-icon"><Icon name="server" size={26} /></div>
+      <div class="hero-info">
+        <strong>{metrics?.hostname || profile.label}</strong>
+        <span>{profile.username}@{profile.host}:{profile.port}</span>
+      </div>
+      {#if error && metrics}
+        <span class="hero-warn"><Icon name="spinner" size={13} spin /> reconnexion…</span>
+      {/if}
+    </div>
+
+    {#if error && !metrics}
       <div class="fatal">
         <Icon name="alert" size={30} />
         <p>Connexion impossible</p>
         <span>{error}</span>
         <button class="btn" onclick={onBack}>Retour</button>
       </div>
-    {:else if metrics}
-      <section class="section-title">Ressources</section>
-      <div class="widgets">
-        <div class="widget">
-          <div class="w-head"><Icon name="memory" size={17} /> Processeur</div>
-          <Gauge value={metrics.cpuPercent} label="CPU" sublabel="{metrics.cpuCores} cœurs" />
-        </div>
-        <div class="widget">
-          <div class="w-head"><Icon name="memory" size={17} /> Mémoire</div>
-          <Gauge
-            value={memPercent}
-            label="RAM"
-            sublabel="{fmtBytes((metrics.memTotalKb - metrics.memAvailableKb) * 1024)} / {fmtBytes(
-              metrics.memTotalKb * 1024,
-            )}"
-          />
-        </div>
-        <div class="widget">
-          <div class="w-head"><Icon name="disk" size={17} /> Disque</div>
-          <Gauge
-            value={diskPercent}
-            label="Disque"
-            sublabel="{fmtBytes(metrics.diskUsedBytes)} / {fmtBytes(metrics.diskTotalBytes)}"
-          />
-        </div>
-
-        <div class="widget wide">
-          <div class="w-head"><Icon name="link" size={17} /> Réseau</div>
-          <div class="net-big">
-            <div class="net-item down">
-              <Icon name="arrow" size={18} />
-              <div><strong>{fmtBytes(rxRate)}/s</strong><span>Descendant</span></div>
-            </div>
-            <div class="net-item up">
-              <Icon name="arrow" size={18} />
-              <div><strong>{fmtBytes(txRate)}/s</strong><span>Montant</span></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="widget wide">
-          <div class="w-head"><Icon name="server" size={17} /> Système</div>
-          <div class="sys">
-            <div class="sys-row">
-              <span>Charge (1 / 5 / 15 min)</span>
-              <strong class="mono"
-                >{metrics.loadAvg[0].toFixed(2)} · {metrics.loadAvg[1].toFixed(2)} · {metrics.loadAvg[2].toFixed(
-                  2,
-                )}</strong
-              >
-            </div>
-            <div class="sys-row"><span>Uptime</span><strong>{fmtUptime(metrics.uptimeSecs)}</strong></div>
-            <div class="sys-row"><span>Hôte</span><strong>{metrics.hostname}</strong></div>
-          </div>
-        </div>
+    {:else}
+      <div class="apps-head">
+        <h2>Applications</h2>
+        <button class="icon-btn" title="Ajouter (bientôt)" disabled><Icon name="plus" size={18} /></button>
       </div>
-
-      <section class="section-title">Applications</section>
-      <div class="apps-empty">
-        <Icon name="apps" size={26} />
-        <p>Le gestionnaire de containers / app store arrive au prochain jalon.</p>
+      <div class="apps">
+        {#each APPS as app (app.label)}
+          <button class="tile" disabled>
+            <span class="tile-icon" style="background:{app.color}"><Icon name={app.icon} size={26} /></span>
+            <span class="tile-label">{app.label}</span>
+          </button>
+        {/each}
       </div>
-
-      {#if error}
-        <div class="reconnect"><Icon name="spinner" size={13} spin /> Reconnexion… ({error})</div>
-      {/if}
+      <p class="apps-note">
+        <Icon name="apps" size={14} /> Les conteneurs Docker de ton serveur apparaîtront ici au prochain jalon.
+      </p>
     {/if}
   </main>
 </div>
 
 <style>
-  .os {
+  .zos {
     height: 100vh;
     width: 100%;
     display: grid;
-    grid-template-columns: 240px 1fr;
+    grid-template-columns: 300px 1fr;
     color: #e7ecf3;
     font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-    background: radial-gradient(1200px 800px at 70% -10%, #16223d 0%, #0c1220 55%, #080b14 100%);
+    background:
+      repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.015) 0 2px, transparent 2px 220px),
+      radial-gradient(900px 700px at 85% -10%, #14161c 0%, #0b0c10 55%, #08090c 100%);
   }
 
-  /* Sidebar */
-  .sidebar {
+  /* Colonne gauche */
+  .col-left {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
-    padding: 1.1rem 0.8rem;
-    background: rgba(10, 14, 24, 0.55);
-    border-right: 1px solid rgba(255, 255, 255, 0.07);
+    gap: 0.7rem;
+    padding: 1rem;
+    overflow-y: auto;
+  }
+  .left-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.1rem 0.3rem 0.3rem;
   }
   .brand {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 0.6rem;
-    padding: 0.4rem 0.6rem 1rem;
+    gap: 0.5rem;
+    font-weight: 700;
+    font-size: 1.02rem;
   }
-  .brand-icon {
+  .icon-btn {
     display: grid;
     place-items: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 11px;
-    background: linear-gradient(180deg, #3b82f6, #2563eb);
-    color: white;
-  }
-  .brand-name {
-    font-weight: 700;
-    font-size: 1.1rem;
-  }
-  nav {
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-    flex: 1;
-  }
-  .nav {
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    padding: 0.65rem 0.7rem;
+    width: 32px;
+    height: 32px;
     border: none;
-    border-radius: 10px;
-    background: transparent;
-    color: #aeb9d1;
-    font-size: 0.9rem;
-    text-align: left;
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-  }
-  .nav:hover:not(:disabled) {
+    border-radius: 9px;
     background: rgba(255, 255, 255, 0.05);
+    color: #aeb9d1;
+    cursor: pointer;
+  }
+  .icon-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
     color: #fff;
   }
-  .nav.active {
-    background: rgba(37, 99, 235, 0.2);
-    color: #fff;
-  }
-  .nav:disabled {
+  .icon-btn:disabled {
+    opacity: 0.4;
     cursor: default;
-    opacity: 0.6;
-  }
-  .nav span:first-of-type {
-    flex: 1;
-  }
-  .soon {
-    font-size: 0.62rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #6f7b96;
-    background: rgba(255, 255, 255, 0.06);
-    padding: 0.1rem 0.35rem;
-    border-radius: 6px;
-  }
-  .side-foot {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-  .server-chip {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    padding: 0.6rem 0.7rem;
-    border-radius: 10px;
-    background: rgba(9, 13, 24, 0.5);
-  }
-  .chip-dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: #6b7280;
-    flex-shrink: 0;
-  }
-  .chip-dot.on {
-    background: #4ade80;
-    box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.2);
-  }
-  .chip-info {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-  .chip-info strong {
-    font-size: 0.82rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .chip-info span {
-    font-size: 0.72rem;
-    color: #7d88a3;
   }
 
-  /* Content */
-  .content {
-    padding: 1.6rem 2rem 2.4rem;
+  .w {
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 16px;
+    padding: 0.9rem 1rem;
+  }
+  .w-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #aeb9d1;
+    font-size: 0.82rem;
+    margin-bottom: 0.7rem;
+  }
+  .w-empty {
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    color: #7d88a3;
+  }
+  .clock {
+    padding: 1.1rem 1.1rem 1rem;
+  }
+  .time {
+    font-size: 2.4rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  .date {
+    color: #8695b3;
+    font-size: 0.8rem;
+    margin-top: 0.35rem;
+    text-transform: capitalize;
+  }
+
+  .sys-gauges {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+  .mini-gauge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+  }
+  .mini-gauge :global(svg) {
+    max-width: 92px;
+  }
+  .mini-sub {
+    font-size: 0.72rem;
+    color: #8695b3;
+  }
+
+  .storage-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.6rem;
+  }
+  .badge-ok {
+    font-size: 0.72rem;
+    color: #4ade80;
+    background: rgba(74, 222, 128, 0.14);
+    padding: 0.15rem 0.5rem;
+    border-radius: 6px;
+    font-weight: 600;
+  }
+  .storage-txt {
+    font-size: 0.8rem;
+    color: #cdd6e6;
+  }
+  .bar {
+    height: 7px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #3b82f6, #4ade80);
+    transition: width 0.6s ease;
+  }
+
+  .spark {
+    width: 100%;
+    height: 34px;
+    display: block;
+  }
+  .iface {
+    color: #7d88a3;
+    font-size: 0.76rem;
+  }
+  .net-rates {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 0.3rem;
+    font-size: 0.78rem;
+  }
+  .net-rates .up {
+    color: #c084fc;
+  }
+  .net-rates .down {
+    color: #7ab0ff;
+  }
+  .net-rates .up :global(svg) {
+    transform: rotate(-90deg);
+  }
+  .net-rates .down :global(svg) {
+    transform: rotate(90deg);
+  }
+  .left-foot {
+    margin-top: auto;
+    padding: 0.4rem 0.3rem;
+    color: #6f7b96;
+    font-size: 0.74rem;
+  }
+
+  /* Zone principale */
+  .col-main {
+    padding: 1.3rem 1.8rem 2rem;
     overflow-y: auto;
   }
   .topbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1.6rem;
+    gap: 1rem;
+    margin-bottom: 1.3rem;
   }
-  .tb-title h1 {
-    margin: 0;
-    font-size: 1.5rem;
-    letter-spacing: -0.02em;
+  .searchbar {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.7rem 1rem;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    color: #7d88a3;
   }
-  .tb-title .sub {
-    color: #93a1bd;
-    font-size: 0.85rem;
+  .searchbar input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: #e7ecf3;
+    font-size: 0.92rem;
+    outline: none;
   }
   .live {
     display: inline-flex;
@@ -362,10 +439,11 @@
     gap: 0.45rem;
     font-size: 0.8rem;
     color: #8695b3;
-    padding: 0.4rem 0.8rem;
+    padding: 0.45rem 0.85rem;
     border-radius: 20px;
-    background: rgba(9, 13, 24, 0.5);
+    background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.06);
+    white-space: nowrap;
   }
   .live .dot {
     width: 8px;
@@ -378,116 +456,97 @@
     box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.2);
   }
 
-  .section-title {
-    font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #7d88a3;
-    margin: 0.4rem 0 0.9rem;
-  }
-
-  .widgets {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-    gap: 1rem;
-    margin-bottom: 1.8rem;
-  }
-  .widget {
-    background: rgba(20, 27, 44, 0.62);
-    border: 1px solid rgba(255, 255, 255, 0.07);
+  .server-hero {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 1.1rem 1.2rem;
     border-radius: 16px;
-    padding: 1.1rem;
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    margin-bottom: 1.6rem;
+  }
+  .hero-icon {
+    display: grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+    background: rgba(16, 185, 129, 0.16);
+    color: #34d399;
+  }
+  .hero-info {
     display: flex;
     flex-direction: column;
-    gap: 0.9rem;
-    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.28);
+    min-width: 0;
+    flex: 1;
   }
-  .widget.wide {
-    grid-column: span 1;
-    justify-content: flex-start;
+  .hero-info strong {
+    font-size: 1.05rem;
   }
-  .w-head {
-    display: flex;
+  .hero-info span {
+    color: #8695b3;
+    font-size: 0.82rem;
+  }
+  .hero-warn {
+    display: inline-flex;
     align-items: center;
-    gap: 0.45rem;
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: #cdd6e6;
+    gap: 0.35rem;
+    color: #d9a441;
+    font-size: 0.76rem;
   }
 
-  .net-big {
-    display: flex;
-    flex-direction: column;
-    gap: 0.9rem;
-    padding-top: 0.4rem;
-  }
-  .net-item {
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-  }
-  .net-item div {
-    display: flex;
-    flex-direction: column;
-  }
-  .net-item strong {
-    font-size: 1.1rem;
-  }
-  .net-item span {
-    font-size: 0.74rem;
-    color: #7d88a3;
-  }
-  .net-item.down {
-    color: #7ab0ff;
-  }
-  .net-item.up {
-    color: #c084fc;
-  }
-  .net-item.down :global(svg) {
-    transform: rotate(90deg);
-  }
-  .net-item.up :global(svg) {
-    transform: rotate(-90deg);
-  }
-
-  .sys {
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
-    padding-top: 0.2rem;
-  }
-  .sys-row {
+  .apps-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.6rem;
-    font-size: 0.85rem;
+    margin-bottom: 1rem;
   }
-  .sys-row span {
-    color: #93a1bd;
+  .apps-head h2 {
+    margin: 0;
+    font-size: 1.1rem;
   }
-  .mono {
-    font-family: ui-monospace, monospace;
+  .apps {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 1.1rem;
   }
-
-  .apps-empty {
+  .tile {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.6rem;
-    padding: 2.2rem 1rem;
-    color: #7d88a3;
-    text-align: center;
-    background: rgba(20, 27, 44, 0.4);
-    border: 1px dashed rgba(255, 255, 255, 0.1);
-    border-radius: 16px;
+    gap: 0.5rem;
+    border: none;
+    background: transparent;
+    color: #cdd6e6;
+    cursor: default;
+    padding: 0;
   }
-  .apps-empty p {
-    margin: 0;
-    font-size: 0.86rem;
+  .tile:disabled {
+    opacity: 0.9;
+  }
+  .tile-icon {
+    display: grid;
+    place-items: center;
+    width: 64px;
+    height: 64px;
+    border-radius: 17px;
+    color: #fff;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  }
+  .tile-label {
+    font-size: 0.8rem;
+    color: #aeb9d1;
+  }
+  .apps-note {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 1.6rem 0 0;
+    font-size: 0.8rem;
+    color: #6f7b96;
   }
 
-  .loading,
   .fatal {
     display: flex;
     flex-direction: column;
@@ -498,9 +557,6 @@
     color: #93a1bd;
     text-align: center;
   }
-  .loading {
-    flex-direction: row;
-  }
   .fatal p {
     margin: 0;
     font-weight: 600;
@@ -508,18 +564,8 @@
   }
   .fatal span {
     font-size: 0.85rem;
-    max-width: 400px;
+    max-width: 420px;
   }
-
-  .reconnect {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    margin-top: 1rem;
-    font-size: 0.76rem;
-    color: #d9a441;
-  }
-
   .btn {
     padding: 0.6rem 1.1rem;
     border: 1px solid rgba(255, 255, 255, 0.14);
