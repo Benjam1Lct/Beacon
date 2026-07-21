@@ -208,18 +208,33 @@
     <p class="hint-drag">Astuce : glisse un conteneur sur un autre pour créer un dossier.</p>
     <div class="tiles">
       {#each groups.folders as f (f.id)}
-        <button
+        <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+        <div
           class="fcard"
           class:drop={dragOver === "f:" + f.id}
+          role="button"
+          tabindex="0"
           onclick={() => openFolderView(f.id, f.name)}
+          onkeydown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              openFolderView(f.id, f.name);
+            }
+          }}
+          ondragenter={(e) => {
+            if (dragged) e.preventDefault();
+          }}
           ondragover={(e) => {
-            e.preventDefault();
-            dragOver = "f:" + f.id;
+            if (dragged) {
+              e.preventDefault();
+              dragOver = "f:" + f.id;
+            }
           }}
           ondragleave={() => {
             if (dragOver === "f:" + f.id) dragOver = null;
           }}
-          ondrop={() => {
+          ondrop={(e) => {
+            e.preventDefault();
             if (dragged) moveTo(dragged, f.id);
             dragOver = null;
           }}
@@ -231,23 +246,38 @@
             {#if f.items.length === 0}<span class="fmini empty"></span>{/if}
           </span>
           <span class="tile-name">{f.name}</span>
-        </button>
+        </div>
       {/each}
 
       {#each groups.ungrouped as c (c.id)}
-        <button
+        <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+        <div
           class="tile"
           class:drop={dragOver === "c:" + c.name}
           class:dragging={dragged === c.name}
+          role="button"
+          tabindex="0"
           draggable="true"
           onclick={() => open(c)}
+          onkeydown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              open(c);
+            }
+          }}
           ondragstart={(e) => {
             dragged = c.name;
-            if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+            if (e.dataTransfer) {
+              e.dataTransfer.effectAllowed = "move";
+              e.dataTransfer.setData("text/plain", c.name);
+            }
           }}
           ondragend={() => {
             dragged = null;
             dragOver = null;
+          }}
+          ondragenter={(e) => {
+            if (dragged && dragged !== c.name) e.preventDefault();
           }}
           ondragover={(e) => {
             if (dragged && dragged !== c.name) {
@@ -258,7 +288,8 @@
           ondragleave={() => {
             if (dragOver === "c:" + c.name) dragOver = null;
           }}
-          ondrop={() => {
+          ondrop={(e) => {
+            e.preventDefault();
             if (dragged && dragged !== c.name) createFolderWith(dragged, c.name);
             dragOver = null;
           }}
@@ -269,7 +300,7 @@
             <span class="dot" class:running={c.state === "running"}></span>
           </span>
           <span class="tile-name">{c.name}</span>
-        </button>
+        </div>
       {/each}
     </div>
   {/if}
@@ -462,6 +493,8 @@
     cursor: pointer;
     padding: 0;
     color: #cdd6e6;
+    user-select: none;
+    -webkit-user-select: none;
     transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
   }
   .fcard:hover {
@@ -564,6 +597,8 @@
     cursor: pointer;
     padding: 0;
     color: #cdd6e6;
+    user-select: none;
+    -webkit-user-select: none;
   }
   .tile-icon {
     position: relative;
