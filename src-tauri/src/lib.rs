@@ -1,4 +1,5 @@
 mod commands;
+mod hardening;
 mod secrets;
 mod ssh;
 mod store;
@@ -14,6 +15,7 @@ pub fn run() {
             commands::save_profile,
             commands::delete_profile,
             commands::connect_profile,
+            commands::harden_bootstrap,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

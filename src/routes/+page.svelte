@@ -4,12 +4,19 @@
   import {
     connectProfile,
     deleteProfile,
+    hardenBootstrap,
     listProfiles,
     pickKeyFile,
     saveProfile,
     sshTestConnection,
   } from "$lib/api";
-  import type { AuthInput, ExecOutcome, ProfileMeta, SaveAuth } from "$lib/types";
+  import type {
+    AuthInput,
+    ExecOutcome,
+    HardeningReport,
+    ProfileMeta,
+    SaveAuth,
+  } from "$lib/types";
 
   let view = $state<"list" | "form">("list");
   let profiles = $state<ProfileMeta[]>([]);
@@ -29,6 +36,11 @@
   let testOutput = $state<string | null>(null);
   let formError = $state<string | null>(null);
   let saving = $state(false);
+
+  // Durcissement (root uniquement)
+  let devUsername = $state("dev");
+  let hardening = $state(false);
+  let hardenReport = $state<HardeningReport | null>(null);
 
   // Connexion depuis la liste
   let connectingId = $state<string | null>(null);
@@ -66,6 +78,8 @@
     testedFp = null;
     testOutput = null;
     formError = null;
+    devUsername = "dev";
+    hardenReport = null;
     view = "form";
   }
 
@@ -125,6 +139,34 @@
     } finally {
       saving = false;
     }
+  }
+
+  async function hardenServer() {
+    hardening = true;
+    hardenReport = null;
+    formError = null;
+    try {
+      const report = await hardenBootstrap({
+        host: host.trim(),
+        port,
+        rootUsername: username.trim(),
+        auth: buildAuth(),
+        devUsername: devUsername.trim(),
+        label: label.trim(),
+      });
+      hardenReport = report;
+      if (report.success) await refresh();
+    } catch (e) {
+      formError = String(e);
+    } finally {
+      hardening = false;
+    }
+  }
+
+  function stepIcon(status: string): string {
+    if (status === "failed") return "alert";
+    if (status === "skipped") return "arrow";
+    return "check";
   }
 
   async function doConnect(profile: ProfileMeta, pwd?: string) {
@@ -351,6 +393,53 @@
           <div class="feedback err">
             <span class="fb-title"><Icon name="alert" size={16} /> Échec</span>
             <span>{formError}</span>
+          </div>
+        {/if}
+
+        {#if username.trim() === "root"}
+          <div class="harden-box">
+            <div class="harden-head">
+              <Icon name="lock" size={18} /> Sécuriser ce serveur <span class="tag">recommandé</span>
+            </div>
+            <p>
+              Beacon va créer un utilisateur dédié, générer une clé SSH et désactiver le login
+              root et par mot de passe. Rien n'est désactivé tant que la nouvelle clé n'est pas
+              vérifiée — ton accès actuel reste intact en cas de souci.
+            </p>
+            <label>
+              <span>Nom de l'utilisateur à créer</span>
+              <input bind:value={devUsername} placeholder="dev" autocomplete="off" />
+            </label>
+            <button
+              class="btn primary"
+              type="button"
+              onclick={hardenServer}
+              disabled={!canTest || hardening}
+            >
+              {#if hardening}
+                <Icon name="spinner" size={16} spin /> Sécurisation…
+              {:else}
+                <Icon name="lock" size={16} /> Sécuriser le serveur
+              {/if}
+            </button>
+          </div>
+        {/if}
+
+        {#if hardenReport}
+          <div class="steps">
+            {#each hardenReport.steps as s (s.key)}
+              <div class="step {s.status}">
+                <Icon name={stepIcon(s.status)} size={16} />
+                <div>
+                  <span>{s.label}</span>
+                  {#if s.detail}<em>{s.detail}</em>{/if}
+                </div>
+              </div>
+            {/each}
+            <div class="harden-msg {hardenReport.success ? 'ok' : 'err'}">
+              <Icon name={hardenReport.success ? "check" : "alert"} size={16} />
+              {hardenReport.message}
+            </div>
           </div>
         {/if}
       </section>
@@ -668,6 +757,96 @@
     font-size: 0.72rem;
     color: #8fd3a6;
     word-break: break-all;
+  }
+
+  .harden-box {
+    margin-top: 1.1rem;
+    padding: 1rem;
+    border-radius: 13px;
+    background: rgba(37, 99, 235, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.28);
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+  }
+  .harden-head {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+  .harden-box p {
+    margin: 0;
+    font-size: 0.82rem;
+    color: #aeb9d1;
+    line-height: 1.45;
+  }
+  .tag {
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 0.12rem 0.45rem;
+    border-radius: 6px;
+    background: #2563eb;
+    color: white;
+  }
+
+  .steps {
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55rem;
+    padding: 0.55rem 0.75rem;
+    border-radius: 10px;
+    background: rgba(9, 13, 24, 0.5);
+    font-size: 0.86rem;
+  }
+  .step > div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+  .step em {
+    font-style: normal;
+    color: #8695b3;
+    font-size: 0.78rem;
+  }
+  .step.ok {
+    color: #9fe6b6;
+  }
+  .step.skipped {
+    color: #b7c0d6;
+  }
+  .step.failed {
+    color: #f7a8a8;
+    background: rgba(127, 29, 29, 0.2);
+  }
+  .harden-msg {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-top: 0.3rem;
+    padding: 0.75rem 0.9rem;
+    border-radius: 11px;
+    font-size: 0.86rem;
+    font-weight: 500;
+  }
+  .harden-msg.ok {
+    background: rgba(22, 101, 52, 0.24);
+    border: 1px solid rgba(74, 222, 128, 0.32);
+    color: #c7f9cc;
+  }
+  .harden-msg.err {
+    background: rgba(127, 29, 29, 0.24);
+    border: 1px solid rgba(248, 113, 113, 0.32);
+    color: #fecaca;
   }
 
   .privacy {

@@ -5,22 +5,16 @@
 
 use std::path::PathBuf;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tauri::{AppHandle, Manager};
 
-use crate::secrets;
+use crate::hardening::{self, HardenInput, HardeningReport};
+use crate::secrets::{self, KeySecret};
 use crate::ssh::{self, AuthInput, ExecOutcome, SshProfile};
 use crate::store::{self, AuthKind, ProfileMeta};
 
-fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     app.path().app_data_dir().map_err(|e| e.to_string())
-}
-
-/// Secret d'un profil à clé, stocké tel quel dans le keyring.
-#[derive(Serialize, Deserialize)]
-struct KeySecret {
-    pem: String,
-    passphrase: Option<String>,
 }
 
 /// Teste une connexion ad-hoc (flux d'import, avant enregistrement).
@@ -75,8 +69,7 @@ pub fn save_profile(app: AppHandle, input: SaveProfileInput) -> Result<ProfileMe
                 pem,
                 passphrase: passphrase.clone(),
             };
-            let blob = serde_json::to_string(&secret).map_err(|e| e.to_string())?;
-            secrets::set(&id, &blob).map_err(|e| e.to_string())?;
+            secrets::set_key(&id, &secret).map_err(|e| e.to_string())?;
             AuthKind::Key
         }
         SaveAuth::Password => AuthKind::Password,
@@ -119,10 +112,9 @@ pub async fn connect_profile(
 
     let auth = match meta.auth_kind {
         AuthKind::Key => {
-            let blob = secrets::get(&id)
+            let secret = secrets::get_key(&id)
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| "Clé absente du trousseau".to_string())?;
-            let secret: KeySecret = serde_json::from_str(&blob).map_err(|e| e.to_string())?;
             AuthInput::KeyContent {
                 pem: secret.pem,
                 passphrase: secret.passphrase,
@@ -153,4 +145,15 @@ pub async fn connect_profile(
     }
 
     Ok(outcome)
+}
+
+/// Durcissement first-run : crée un user dédié, génère une clé, désactive root/mot de passe.
+/// Ne s'applique que si l'accès fourni est root (garde-fou côté backend).
+#[tauri::command]
+pub async fn harden_bootstrap(
+    app: AppHandle,
+    input: HardenInput,
+) -> Result<HardeningReport, String> {
+    let dir = data_dir(&app)?;
+    Ok(hardening::run_wizard(&dir, input).await)
 }

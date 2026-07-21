@@ -3,10 +3,19 @@
 
 const SERVICE: &str = "beacon-ssh";
 
+/// Secret d'un profil à clé (clé privée + passphrase), stocké en JSON dans le keyring.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct KeySecret {
+    pub pem: String,
+    pub passphrase: Option<String>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SecretError {
     #[error("Trousseau indisponible : {0}")]
     Keyring(String),
+    #[error("Secret illisible : {0}")]
+    Parse(String),
 }
 
 impl serde::Serialize for SecretError {
@@ -40,5 +49,21 @@ pub fn delete(id: &str) -> Result<(), SecretError> {
     match entry(id)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(SecretError::Keyring(e.to_string())),
+    }
+}
+
+/// Enregistre la clé d'un profil (sérialisée en JSON).
+pub fn set_key(id: &str, key: &KeySecret) -> Result<(), SecretError> {
+    let blob = serde_json::to_string(key).map_err(|e| SecretError::Parse(e.to_string()))?;
+    set(id, &blob)
+}
+
+/// Récupère la clé d'un profil, ou `None`.
+pub fn get_key(id: &str) -> Result<Option<KeySecret>, SecretError> {
+    match get(id)? {
+        Some(blob) => serde_json::from_str(&blob)
+            .map(Some)
+            .map_err(|e| SecretError::Parse(e.to_string())),
+        None => Ok(None),
     }
 }

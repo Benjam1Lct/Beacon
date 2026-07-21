@@ -2,7 +2,14 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { ExecOutcome, ProfileMeta, SaveProfileInput, SshProfile } from "./types";
+import type {
+  ExecOutcome,
+  HardenInput,
+  HardeningReport,
+  ProfileMeta,
+  SaveProfileInput,
+  SshProfile,
+} from "./types";
 
 /** Teste une connexion ad-hoc ; renvoie la sortie de `uname -a` + l'empreinte de la clé d'hôte. */
 export function sshTestConnection(profile: SshProfile): Promise<ExecOutcome> {
@@ -27,6 +34,11 @@ export function deleteProfile(id: string): Promise<void> {
 /** Se connecte à un profil enregistré (TOFU appliqué). Mot de passe requis pour ce type de profil. */
 export function connectProfile(id: string, password?: string): Promise<ExecOutcome> {
   return invoke<ExecOutcome>("connect_profile", { id, password: password ?? null });
+}
+
+/** Durcissement first-run (root uniquement) : crée un user dédié, clé, désactive root/password. */
+export function hardenBootstrap(input: HardenInput): Promise<HardeningReport> {
+  return invoke<HardeningReport>("harden_bootstrap", { input });
 }
 
 /** Ouvre un sélecteur de fichier pour choisir une clé SSH privée. Renvoie le chemin ou null. */

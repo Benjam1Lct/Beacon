@@ -48,3 +48,26 @@ export interface SaveProfileInput {
   auth: SaveAuth;
   hostKeyFp?: string | null;
 }
+
+export interface HardenInput {
+  host: string;
+  port: number;
+  rootUsername: string;
+  auth: AuthInput;
+  devUsername: string;
+  label: string;
+}
+
+export interface HardeningStep {
+  key: string;
+  label: string;
+  status: "ok" | "skipped" | "failed";
+  detail?: string | null;
+}
+
+export interface HardeningReport {
+  success: boolean;
+  steps: HardeningStep[];
+  profile: ProfileMeta | null;
+  message: string;
+}
