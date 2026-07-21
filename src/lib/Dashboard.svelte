@@ -502,8 +502,8 @@
     background: #6b7280;
   }
   .live.on .dot {
-    background: #fff;
-    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.18);
+    background: #2dd4bf;
+    box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.22);
   }
 
   .server-hero {
