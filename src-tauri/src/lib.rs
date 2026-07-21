@@ -1,4 +1,5 @@
 mod commands;
+mod docker;
 mod hardening;
 mod monitor;
 mod secrets;
@@ -17,6 +18,9 @@ pub fn run() {
             commands::delete_profile,
             commands::connect_profile,
             commands::fetch_metrics,
+            commands::docker_list,
+            commands::docker_action,
+            commands::docker_logs,
             commands::harden_bootstrap,
         ])
         .run(tauri::generate_context!())

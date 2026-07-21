@@ -5,6 +5,7 @@
   import Gauge from "$lib/Gauge.svelte";
   import Icon from "$lib/Icon.svelte";
   import HddImage from "$lib/HddImage.svelte";
+  import Containers from "$lib/Containers.svelte";
   import { fetchMetrics } from "$lib/api";
   import type { Metrics, ProfileMeta } from "$lib/types";
 
@@ -230,6 +231,8 @@
         <button class="btn" onclick={onBack}>Retour</button>
       </div>
     {:else}
+      <Containers profileId={profile.id} {password} />
+
       <section class="apps-panel" in:fly={{ y: 14, duration: 360, easing: quintOut }}>
         <div class="apps-head">
           <h2>Applications</h2>
@@ -249,7 +252,7 @@
           {/each}
         </div>
         <p class="apps-note">
-          <Icon name="apps" size={14} /> Les conteneurs Docker de ton serveur apparaîtront ici au prochain jalon.
+          <Icon name="apps" size={14} /> Applications intégrées — l'App Store 1-clic arrive au prochain jalon.
         </p>
       </section>
     {/if}

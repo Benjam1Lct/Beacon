@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use tauri::{AppHandle, Manager};
 
+use crate::docker::{self, DockerStatus};
 use crate::hardening::{self, HardenInput, HardeningReport};
 use crate::monitor::{self, Metrics};
 use crate::secrets::{self, KeySecret};
@@ -173,6 +174,62 @@ pub async fn fetch_metrics(
         .await
         .map_err(|e| e.to_string())?;
     monitor::parse(&out.result.stdout)
+}
+
+/// Liste les conteneurs Docker d'un serveur (état + stats), et indique si Docker est installé.
+#[tauri::command]
+pub async fn docker_list(
+    app: AppHandle,
+    id: String,
+    password: Option<String>,
+) -> Result<DockerStatus, String> {
+    let dir = data_dir(&app)?;
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
+    let out = ssh::exec(&profile, docker::LIST_CMD, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(docker::parse(&out.result.stdout))
+}
+
+/// Exécute une action Docker (start/stop/restart) sur un conteneur.
+#[tauri::command]
+pub async fn docker_action(
+    app: AppHandle,
+    id: String,
+    container: String,
+    action: String,
+    password: Option<String>,
+) -> Result<(), String> {
+    let cmd =
+        docker::action_cmd(&action, &container).ok_or_else(|| "Action invalide".to_string())?;
+    let dir = data_dir(&app)?;
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
+    let out = ssh::exec(&profile, &cmd, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    if out.result.exit_code == 0 {
+        Ok(())
+    } else {
+        Err(out.result.stderr.trim().to_string())
+    }
+}
+
+/// Renvoie les derniers logs d'un conteneur.
+#[tauri::command]
+pub async fn docker_logs(
+    app: AppHandle,
+    id: String,
+    container: String,
+    tail: u32,
+    password: Option<String>,
+) -> Result<String, String> {
+    let cmd = docker::logs_cmd(&container, tail).ok_or_else(|| "Conteneur invalide".to_string())?;
+    let dir = data_dir(&app)?;
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
+    let out = ssh::exec(&profile, &cmd, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(out.result.stdout)
 }
 
 /// Durcissement first-run : crée un user dédié, génère une clé, désactive root/mot de passe.

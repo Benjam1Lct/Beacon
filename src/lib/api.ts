@@ -3,6 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
+  DockerStatus,
   ExecOutcome,
   HardenInput,
   HardeningReport,
@@ -40,6 +41,31 @@ export function connectProfile(id: string, password?: string): Promise<ExecOutco
 /** Récupère les métriques système d'un serveur (CPU/RAM/disque/réseau). */
 export function fetchMetrics(id: string, password?: string): Promise<Metrics> {
   return invoke<Metrics>("fetch_metrics", { id, password: password ?? null });
+}
+
+/** Liste les conteneurs Docker d'un serveur (et si Docker est installé). */
+export function dockerList(id: string, password?: string): Promise<DockerStatus> {
+  return invoke<DockerStatus>("docker_list", { id, password: password ?? null });
+}
+
+/** Action Docker (start/stop/restart) sur un conteneur. */
+export function dockerAction(
+  id: string,
+  container: string,
+  action: "start" | "stop" | "restart",
+  password?: string,
+): Promise<void> {
+  return invoke<void>("docker_action", { id, container, action, password: password ?? null });
+}
+
+/** Derniers logs d'un conteneur. */
+export function dockerLogs(
+  id: string,
+  container: string,
+  tail = 200,
+  password?: string,
+): Promise<string> {
+  return invoke<string>("docker_logs", { id, container, tail, password: password ?? null });
 }
 
 /** Durcissement first-run (root uniquement) : crée un user dédié, clé, désactive root/password. */

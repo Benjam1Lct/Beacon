@@ -72,6 +72,22 @@ export interface HardeningReport {
   message: string;
 }
 
+export interface Container {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  status: string;
+  ports: string;
+  cpuPercent: number | null;
+  memUsage: string | null;
+}
+
+export interface DockerStatus {
+  installed: boolean;
+  containers: Container[];
+}
+
 export interface Metrics {
   hostname: string;
   uptimeSecs: number;
