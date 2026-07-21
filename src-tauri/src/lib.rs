@@ -1,6 +1,7 @@
 mod caddy;
 mod commands;
 mod docker;
+mod files;
 mod hardening;
 mod monitor;
 mod secrets;
@@ -29,6 +30,7 @@ pub fn run() {
             commands::install_caddy,
             commands::apply_routes,
             commands::check_routes,
+            commands::list_dir,
             commands::open_ssh_terminal,
             commands::harden_bootstrap,
         ])

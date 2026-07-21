@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
   CaddyRoute,
+  DirListing,
   DockerStatus,
   ExecOutcome,
   HardenInput,
@@ -92,6 +93,11 @@ export function installCaddy(id: string, password?: string): Promise<string> {
 /** Applique les liaisons reverse proxy (génère + recharge Caddy). */
 export function applyRoutes(id: string, routes: CaddyRoute[], password?: string): Promise<void> {
   return invoke<void>("apply_routes", { id, routes, password: password ?? null });
+}
+
+/** Liste un dossier distant (explorateur de fichiers). */
+export function listDir(id: string, path: string, password?: string): Promise<DirListing> {
+  return invoke<DirListing>("list_dir", { id, path, password: password ?? null });
 }
 
 /** Diagnostic des liaisons (DNS / port). */

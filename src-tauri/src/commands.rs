@@ -10,6 +10,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::caddy::{self, CaddyRoute, RouteHealth};
 use crate::docker::{self, DeployConfig, DockerStatus};
+use crate::files::{self, DirListing};
 use crate::hardening::{self, HardenInput, HardeningReport};
 use crate::monitor::{self, Metrics};
 use crate::secrets::{self, KeySecret};
@@ -176,6 +177,26 @@ pub async fn fetch_metrics(
         .await
         .map_err(|e| e.to_string())?;
     monitor::parse(&out.result.stdout)
+}
+
+/// Liste un dossier distant (explorateur de fichiers, lecture seule).
+#[tauri::command]
+pub async fn list_dir(
+    app: AppHandle,
+    id: String,
+    path: String,
+    password: Option<String>,
+) -> Result<DirListing, String> {
+    let dir = data_dir(&app)?;
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
+    let out = ssh::exec(
+        &profile,
+        &files::list_cmd(&path),
+        meta.host_key_fp.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(files::parse(&out.result.stdout))
 }
 
 /// Indique si Caddy est installé sur le serveur.

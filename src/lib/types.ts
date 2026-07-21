@@ -88,6 +88,15 @@ export interface DockerStatus {
   containers: Container[];
 }
 
+export interface DirEntry {
+  name: string;
+  isDir: boolean;
+}
+export interface DirListing {
+  path: string;
+  entries: DirEntry[];
+}
+
 export type SslMode = "public" | "local" | "none";
 export interface CaddyRoute {
   domain: string;

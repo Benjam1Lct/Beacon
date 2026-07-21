@@ -9,7 +9,9 @@
   import Containers from "$lib/Containers.svelte";
   import AppStore from "$lib/AppStore.svelte";
   import Network from "$lib/Network.svelte";
-  import { fetchMetrics } from "$lib/api";
+  import Files from "$lib/Files.svelte";
+  import Settings from "$lib/Settings.svelte";
+  import { fetchMetrics, openSshTerminal } from "$lib/api";
   import type { Metrics, ProfileMeta } from "$lib/types";
 
   let {
@@ -31,6 +33,16 @@
   let clock = $state(new Date());
   let storeOpen = $state(false);
   let networkOpen = $state(false);
+  let filesOpen = $state(false);
+  let settingsOpen = $state(false);
+
+  async function openTerminal() {
+    try {
+      await openSshTerminal(profile.id);
+    } catch {
+      /* erreur terminal ignorée ici */
+    }
+  }
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let clockTimer: ReturnType<typeof setInterval> | null = null;
@@ -135,7 +147,6 @@
     { key: "appstore", label: "App Store" },
     { key: "files", label: "Fichiers" },
     { key: "terminal", label: "Terminal" },
-    { key: "containers", label: "Conteneurs" },
     { key: "network", label: "Réseau" },
     { key: "settings", label: "Réglages" },
   ];
@@ -275,14 +286,13 @@
             <button
               class="tile"
               type="button"
-              title={app.key === "appstore"
-                ? "Ouvrir l'App Store"
-                : app.key === "network"
-                  ? "Réseau — reverse proxy"
-                  : "Bientôt disponible"}
+              title={app.label}
               onclick={() => {
                 if (app.key === "appstore") storeOpen = true;
                 else if (app.key === "network") networkOpen = true;
+                else if (app.key === "files") filesOpen = true;
+                else if (app.key === "settings") settingsOpen = true;
+                else if (app.key === "terminal") openTerminal();
               }}
               in:fly={{ y: 16, duration: 340, delay: i * 45, easing: quintOut }}
             >
@@ -307,6 +317,22 @@
 
 {#if networkOpen}
   <Network profileId={profile.id} {password} onClose={() => (networkOpen = false)} />
+{/if}
+
+{#if filesOpen}
+  <Files profileId={profile.id} {password} onClose={() => (filesOpen = false)} />
+{/if}
+
+{#if settingsOpen}
+  <Settings
+    {profile}
+    onClose={() => (settingsOpen = false)}
+    onDisconnect={() => {
+      settingsOpen = false;
+      onBack();
+    }}
+    onTerminal={openTerminal}
+  />
 {/if}
 
 <style>
