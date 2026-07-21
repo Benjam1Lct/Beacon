@@ -10,7 +10,8 @@
 
   const clamped = $derived(Math.max(0, Math.min(100, value)));
   const offset = $derived(CIRC * (1 - clamped / 100));
-  const color = $derived(clamped >= 90 ? "#f87171" : clamped >= 70 ? "#fbbf24" : "#4ade80");
+  // Monochrome : anneau blanc, seul le seuil critique (>=90%) passe en rouge.
+  const color = $derived(clamped >= 90 ? "#ff6b6b" : "#ffffff");
 </script>
 
 <div class="gauge">

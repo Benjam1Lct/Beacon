@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
+  import { fly } from "svelte/transition";
+  import { quintOut } from "svelte/easing";
   import Gauge from "$lib/Gauge.svelte";
   import Icon from "$lib/Icon.svelte";
   import { fetchMetrics } from "$lib/api";
@@ -98,12 +100,12 @@
   });
 
   const APPS = [
-    { icon: "apps", label: "App Store", color: "#3b82f6" },
-    { icon: "folder", label: "Fichiers", color: "#f5a623" },
-    { icon: "terminal", label: "Terminal", color: "#334155" },
-    { icon: "server", label: "Conteneurs", color: "#10b981" },
-    { icon: "link", label: "Réseau", color: "#8b5cf6" },
-    { icon: "settings", label: "Réglages", color: "#64748b" },
+    { icon: "apps", label: "App Store" },
+    { icon: "folder", label: "Fichiers" },
+    { icon: "terminal", label: "Terminal" },
+    { icon: "server", label: "Conteneurs" },
+    { icon: "link", label: "Réseau" },
+    { icon: "settings", label: "Réglages" },
   ];
 </script>
 
@@ -116,7 +118,7 @@
     </div>
 
     <!-- Horloge -->
-    <div class="w clock">
+    <div class="w clock" in:fly={{ x: -16, duration: 420, easing: quintOut }}>
       <div class="time">{clock.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</div>
       <div class="date">
         {clock.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
@@ -124,7 +126,7 @@
     </div>
 
     <!-- Système -->
-    <div class="w">
+    <div class="w" in:fly={{ x: -16, duration: 420, delay: 70, easing: quintOut }}>
       <div class="w-head"><span>Système</span></div>
       {#if metrics}
         <div class="sys-gauges">
@@ -143,7 +145,7 @@
     </div>
 
     <!-- Stockage -->
-    <div class="w">
+    <div class="w" in:fly={{ x: -16, duration: 420, delay: 140, easing: quintOut }}>
       <div class="w-head"><span>Stockage</span><Icon name="disk" size={15} /></div>
       {#if metrics}
         <div class="storage">
@@ -161,11 +163,11 @@
     </div>
 
     <!-- Réseau -->
-    <div class="w">
+    <div class="w" in:fly={{ x: -16, duration: 420, delay: 210, easing: quintOut }}>
       <div class="w-head"><span>Réseau</span><span class="iface">{metrics ? "eth" : ""}</span></div>
       <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none">
         {#if sparkPoints}
-          <polyline points={sparkPoints} fill="none" stroke="#4ade80" stroke-width="1.6" />
+          <polyline points={sparkPoints} fill="none" stroke="#ffffff" stroke-width="1.6" />
         {/if}
       </svg>
       <div class="net-rates">
@@ -215,9 +217,14 @@
         <button class="icon-btn" title="Ajouter (bientôt)" disabled><Icon name="plus" size={18} /></button>
       </div>
       <div class="apps">
-        {#each APPS as app (app.label)}
-          <button class="tile" disabled>
-            <span class="tile-icon" style="background:{app.color}"><Icon name={app.icon} size={26} /></span>
+        {#each APPS as app, i (app.label)}
+          <button
+            class="tile"
+            type="button"
+            title="Bientôt disponible"
+            in:fly={{ y: 16, duration: 340, delay: i * 45, easing: quintOut }}
+          >
+            <span class="tile-icon"><Icon name={app.icon} size={26} /></span>
             <span class="tile-label">{app.label}</span>
           </button>
         {/each}
@@ -235,11 +242,9 @@
     width: 100%;
     display: grid;
     grid-template-columns: 300px 1fr;
-    color: #e7ecf3;
+    color: #f4f4f5;
     font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-    background:
-      repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.015) 0 2px, transparent 2px 220px),
-      radial-gradient(900px 700px at 85% -10%, #14161c 0%, #0b0c10 55%, #08090c 100%);
+    background: transparent;
   }
 
   /* Colonne gauche */
@@ -346,15 +351,15 @@
   }
   .badge-ok {
     font-size: 0.72rem;
-    color: #4ade80;
-    background: rgba(74, 222, 128, 0.14);
+    color: #fff;
+    background: rgba(255, 255, 255, 0.12);
     padding: 0.15rem 0.5rem;
     border-radius: 6px;
     font-weight: 600;
   }
   .storage-txt {
     font-size: 0.8rem;
-    color: #cdd6e6;
+    color: rgba(255, 255, 255, 0.8);
   }
   .bar {
     height: 7px;
@@ -365,8 +370,8 @@
   .bar-fill {
     height: 100%;
     border-radius: 4px;
-    background: linear-gradient(90deg, #3b82f6, #4ade80);
-    transition: width 0.6s ease;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.55), #fff);
+    transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .spark {
@@ -385,10 +390,10 @@
     font-size: 0.78rem;
   }
   .net-rates .up {
-    color: #c084fc;
+    color: rgba(255, 255, 255, 0.65);
   }
   .net-rates .down {
-    color: #7ab0ff;
+    color: #fff;
   }
   .net-rates .up :global(svg) {
     transform: rotate(-90deg);
@@ -452,8 +457,8 @@
     background: #6b7280;
   }
   .live.on .dot {
-    background: #4ade80;
-    box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.2);
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.18);
   }
 
   .server-hero {
@@ -472,8 +477,8 @@
     width: 46px;
     height: 46px;
     border-radius: 12px;
-    background: rgba(16, 185, 129, 0.16);
-    color: #34d399;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
   }
   .hero-info {
     display: flex;
@@ -519,24 +524,35 @@
     border: none;
     background: transparent;
     color: #cdd6e6;
-    cursor: default;
+    cursor: pointer;
     padding: 0;
-  }
-  .tile:disabled {
-    opacity: 0.9;
   }
   .tile-icon {
     display: grid;
     place-items: center;
     width: 64px;
     height: 64px;
-    border-radius: 17px;
+    border-radius: 18px;
     color: #fff;
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+    transition:
+      transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+      background 0.22s ease,
+      border-color 0.22s ease;
+  }
+  .tile:hover .tile-icon {
+    transform: translateY(-3px) scale(1.04);
+    background: rgba(255, 255, 255, 0.13);
+    border-color: rgba(255, 255, 255, 0.22);
+  }
+  .tile:active .tile-icon {
+    transform: translateY(-1px) scale(0.99);
   }
   .tile-label {
     font-size: 0.8rem;
-    color: #aeb9d1;
+    color: rgba(255, 255, 255, 0.7);
   }
   .apps-note {
     display: flex;

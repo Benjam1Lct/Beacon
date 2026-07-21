@@ -1,5 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { fade, fly } from "svelte/transition";
+  import { flip } from "svelte/animate";
+  import { quintOut } from "svelte/easing";
   import Icon from "$lib/Icon.svelte";
   import Dashboard from "$lib/Dashboard.svelte";
   import {
@@ -21,11 +24,9 @@
   let view = $state<"list" | "form" | "dashboard">("list");
   let profiles = $state<ProfileMeta[]>([]);
 
-  // Dashboard (serveur actif)
   let activeProfile = $state<ProfileMeta | null>(null);
   let activePassword = $state<string | undefined>(undefined);
 
-  // Formulaire d'ajout
   let label = $state("");
   let host = $state("");
   let port = $state(22);
@@ -41,12 +42,10 @@
   let formError = $state<string | null>(null);
   let saving = $state(false);
 
-  // Durcissement (root uniquement)
   let devUsername = $state("dev");
   let hardening = $state(false);
   let hardenReport = $state<HardeningReport | null>(null);
 
-  // Connexion depuis la liste
   let passwordPromptId = $state<string | null>(null);
   let promptPassword = $state("");
 
@@ -180,7 +179,7 @@
 
   function onConnectClick(profile: ProfileMeta) {
     if (profile.authKind === "password") {
-      passwordPromptId = profile.id;
+      passwordPromptId = passwordPromptId === profile.id ? null : profile.id;
       promptPassword = "";
     } else {
       openDashboard(profile);
@@ -209,8 +208,8 @@
 {:else}
   <main>
     <div class="shell">
-      <header>
-        <span class="brand-icon"><Icon name="beacon" size={30} /></span>
+      <header in:fly={{ y: -10, duration: 400, easing: quintOut }}>
+        <span class="brand-icon"><Icon name="beacon" size={28} /></span>
         <div>
           <h1>Beacon</h1>
           <p class="tagline">Pilote ton serveur — VPS ou machine locale.</p>
@@ -218,217 +217,207 @@
       </header>
 
       {#if view === "list"}
-      <section class="panel">
-        <div class="panel-head">
-          <h2>Mes serveurs</h2>
-          <button class="btn primary" onclick={openForm}>
-            <Icon name="plus" size={18} /> Ajouter un serveur
-          </button>
-        </div>
-
-        {#if profiles.length === 0}
-          <div class="empty">
-            <Icon name="server" size={40} />
-            <p>Aucun serveur enregistré.</p>
+        <section class="panel" in:fly={{ y: 14, duration: 320, easing: quintOut }}>
+          <div class="panel-head">
+            <h2>Mes serveurs</h2>
             <button class="btn primary" onclick={openForm}>
-              <Icon name="plus" size={18} /> Ajouter ton premier serveur
-            </button>
-          </div>
-        {:else}
-          <ul class="cards">
-            {#each profiles as p (p.id)}
-              <li class="card">
-                <div class="card-main">
-                  <span class="card-icon"><Icon name="server" size={22} /></span>
-                  <div class="card-info">
-                    <strong>{p.label}</strong>
-                    <span class="sub">{p.username}@{p.host}:{p.port}</span>
-                    <span class="badge">
-                      <Icon name={p.authKind === "key" ? "key" : "lock"} size={13} />
-                      {p.authKind === "key" ? "Clé SSH" : "Mot de passe"}
-                      {#if p.hostKeyFp}
-                        <span class="pinned"><Icon name="lock" size={12} /> hôte épinglé</span>
-                      {/if}
-                    </span>
-                  </div>
-                </div>
-
-                <div class="card-actions">
-                  <button class="btn primary sm" onclick={() => onConnectClick(p)}>
-                    <Icon name="arrow" size={16} /> Ouvrir
-                  </button>
-                  <button class="btn ghost sm" title="Supprimer" onclick={() => remove(p)}>
-                    <Icon name="trash" size={16} />
-                  </button>
-                </div>
-
-                {#if passwordPromptId === p.id}
-                  <form
-                    class="pwd-prompt"
-                    onsubmit={(e) => {
-                      e.preventDefault();
-                      openDashboard(p, promptPassword);
-                    }}
-                  >
-                    <input
-                      type="password"
-                      placeholder="Mot de passe (non enregistré)"
-                      bind:value={promptPassword}
-                    />
-                    <button class="btn primary sm" type="submit">Ouvrir</button>
-                  </form>
-                {/if}
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      </section>
-    {:else}
-      <section class="panel">
-        <div class="panel-head">
-          <h2>Ajouter un serveur</h2>
-          <button class="btn ghost" onclick={() => (view = "list")}>
-            <Icon name="close" size={18} /> Annuler
-          </button>
-        </div>
-
-        <form class="add-form" onsubmit={testConn}>
-          <label class="span-2">
-            <span>Nom <em>(optionnel)</em></span>
-            <input bind:value={label} placeholder="Mon VPS de prod" autocomplete="off" />
-          </label>
-
-          <div class="grid">
-            <label class="span-2">
-              <span>Adresse IP / hôte</span>
-              <input bind:value={host} placeholder="192.168.1.50 ou 203.0.113.10" autocomplete="off" />
-            </label>
-            <label>
-              <span>Port</span>
-              <input type="number" bind:value={port} min="1" max="65535" />
-            </label>
-            <label>
-              <span>Utilisateur</span>
-              <input bind:value={username} placeholder="root" autocomplete="off" />
-            </label>
-          </div>
-
-          <div class="auth-toggle">
-            <button type="button" class:active={authKind === "key"} onclick={() => (authKind = "key")}>
-              <Icon name="key" size={15} /> Clé SSH
-            </button>
-            <button
-              type="button"
-              class:active={authKind === "password"}
-              onclick={() => (authKind = "password")}
-            >
-              <Icon name="lock" size={15} /> Mot de passe
+              <Icon name="plus" size={18} /> Ajouter
             </button>
           </div>
 
-          {#if authKind === "key"}
-            <label>
-              <span>Clé privée</span>
-              <div class="file-row">
-                <input bind:value={keyPath} placeholder="Choisis ta clé SSH…" readonly />
-                <button type="button" class="btn ghost sm" onclick={browseKey}>
-                  <Icon name="folder" size={16} /> Parcourir
-                </button>
-              </div>
-            </label>
-            <label>
-              <span>Passphrase <em>(si la clé en a une)</em></span>
-              <input type="password" bind:value={passphrase} autocomplete="off" />
-            </label>
+          {#if profiles.length === 0}
+            <div class="empty" in:fade={{ duration: 300 }}>
+              <span class="empty-icon"><Icon name="server" size={34} /></span>
+              <p>Aucun serveur enregistré.</p>
+              <button class="btn primary" onclick={openForm}>
+                <Icon name="plus" size={18} /> Ajouter ton premier serveur
+              </button>
+            </div>
           {:else}
-            <label>
-              <span>Mot de passe <em>(bootstrap, jamais enregistré)</em></span>
-              <input type="password" bind:value={password} autocomplete="off" />
+            <ul class="cards">
+              {#each profiles as p, i (p.id)}
+                <li
+                  class="card"
+                  in:fly={{ y: 18, duration: 340, delay: Math.min(i, 8) * 50, easing: quintOut }}
+                  animate:flip={{ duration: 280, easing: quintOut }}
+                >
+                  <div class="card-main">
+                    <span class="card-icon"><Icon name="server" size={20} /></span>
+                    <div class="card-info">
+                      <strong>{p.label}</strong>
+                      <span class="sub">{p.username}@{p.host}:{p.port}</span>
+                      <span class="badge">
+                        <Icon name={p.authKind === "key" ? "key" : "lock"} size={12} />
+                        {p.authKind === "key" ? "Clé SSH" : "Mot de passe"}
+                        {#if p.hostKeyFp}<span class="pinned">· hôte épinglé</span>{/if}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="card-actions">
+                    <button class="btn primary sm" onclick={() => onConnectClick(p)}>
+                      <Icon name="arrow" size={15} /> Ouvrir
+                    </button>
+                    <button class="btn ghost sm icon" title="Supprimer" onclick={() => remove(p)}>
+                      <Icon name="trash" size={16} />
+                    </button>
+                  </div>
+
+                  {#if passwordPromptId === p.id}
+                    <form
+                      class="pwd-prompt"
+                      transition:fly={{ y: -6, duration: 200, easing: quintOut }}
+                      onsubmit={(e) => {
+                        e.preventDefault();
+                        openDashboard(p, promptPassword);
+                      }}
+                    >
+                      <input
+                        type="password"
+                        placeholder="Mot de passe (non enregistré)"
+                        bind:value={promptPassword}
+                      />
+                      <button class="btn primary sm" type="submit">Ouvrir</button>
+                    </form>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </section>
+      {:else}
+        <section class="panel" in:fly={{ y: 14, duration: 320, easing: quintOut }}>
+          <div class="panel-head">
+            <h2>Ajouter un serveur</h2>
+            <button class="btn ghost" onclick={() => (view = "list")}>
+              <Icon name="close" size={18} /> Annuler
+            </button>
+          </div>
+
+          <form class="add-form" onsubmit={testConn}>
+            <label class="span-2">
+              <span>Nom <em>(optionnel)</em></span>
+              <input bind:value={label} placeholder="Mon VPS de prod" autocomplete="off" />
             </label>
+
+            <div class="grid">
+              <label class="span-2">
+                <span>Adresse IP / hôte</span>
+                <input bind:value={host} placeholder="192.168.1.50 ou 203.0.113.10" autocomplete="off" />
+              </label>
+              <label>
+                <span>Port</span>
+                <input type="number" bind:value={port} min="1" max="65535" />
+              </label>
+              <label>
+                <span>Utilisateur</span>
+                <input bind:value={username} placeholder="root" autocomplete="off" />
+              </label>
+            </div>
+
+            <div class="auth-toggle">
+              <button type="button" class:active={authKind === "key"} onclick={() => (authKind = "key")}>
+                <Icon name="key" size={15} /> Clé SSH
+              </button>
+              <button
+                type="button"
+                class:active={authKind === "password"}
+                onclick={() => (authKind = "password")}
+              >
+                <Icon name="lock" size={15} /> Mot de passe
+              </button>
+            </div>
+
+            {#if authKind === "key"}
+              <label in:fade={{ duration: 200 }}>
+                <span>Clé privée</span>
+                <div class="file-row">
+                  <input bind:value={keyPath} placeholder="Choisis ta clé SSH…" readonly />
+                  <button type="button" class="btn ghost sm" onclick={browseKey}>
+                    <Icon name="folder" size={16} /> Parcourir
+                  </button>
+                </div>
+              </label>
+              <label in:fade={{ duration: 200 }}>
+                <span>Passphrase <em>(si la clé en a une)</em></span>
+                <input type="password" bind:value={passphrase} autocomplete="off" />
+              </label>
+            {:else}
+              <label in:fade={{ duration: 200 }}>
+                <span>Mot de passe <em>(bootstrap, jamais enregistré)</em></span>
+                <input type="password" bind:value={password} autocomplete="off" />
+              </label>
+            {/if}
+
+            <div class="actions">
+              <button class="btn" type="submit" disabled={!canTest || testing}>
+                {#if testing}<Icon name="spinner" size={16} spin /> Test…{:else}Tester la connexion{/if}
+              </button>
+              <button class="btn primary" type="button" onclick={save} disabled={!canTest || saving}>
+                {#if saving}<Icon name="spinner" size={16} spin /> Enregistrement…{:else}<Icon
+                    name="check"
+                    size={16}
+                  /> Enregistrer{/if}
+              </button>
+            </div>
+          </form>
+
+          {#if testOutput}
+            <div class="feedback ok" in:fly={{ y: 8, duration: 250, easing: quintOut }}>
+              <span class="fb-title"><Icon name="check" size={16} /> Connexion réussie</span>
+              <code>{testOutput}</code>
+              {#if testedFp}<span class="fp">Clé d'hôte : {testedFp}</span>{/if}
+            </div>
+          {/if}
+          {#if formError}
+            <div class="feedback err" in:fly={{ y: 8, duration: 250, easing: quintOut }}>
+              <span class="fb-title"><Icon name="alert" size={16} /> Échec</span>
+              <span>{formError}</span>
+            </div>
           {/if}
 
-          <div class="actions">
-            <button class="btn" type="submit" disabled={!canTest || testing}>
-              {#if testing}
-                <Icon name="spinner" size={16} spin /> Test…
-              {:else}
-                Tester la connexion
-              {/if}
-            </button>
-            <button class="btn primary" type="button" onclick={save} disabled={!canTest || saving}>
-              {#if saving}
-                <Icon name="spinner" size={16} spin /> Enregistrement…
-              {:else}
-                <Icon name="check" size={16} /> Enregistrer
-              {/if}
-            </button>
-          </div>
-        </form>
-
-        {#if testOutput}
-          <div class="feedback ok">
-            <span class="fb-title"><Icon name="check" size={16} /> Connexion réussie</span>
-            <code>{testOutput}</code>
-            {#if testedFp}
-              <span class="fp">Clé d'hôte : {testedFp}</span>
-            {/if}
-          </div>
-        {/if}
-        {#if formError}
-          <div class="feedback err">
-            <span class="fb-title"><Icon name="alert" size={16} /> Échec</span>
-            <span>{formError}</span>
-          </div>
-        {/if}
-
-        {#if username.trim() === "root"}
-          <div class="harden-box">
-            <div class="harden-head">
-              <Icon name="lock" size={18} /> Sécuriser ce serveur <span class="tag">recommandé</span>
-            </div>
-            <p>
-              Beacon va créer un utilisateur dédié, générer une clé SSH et désactiver le login
-              root et par mot de passe. Rien n'est désactivé tant que la nouvelle clé n'est pas
-              vérifiée — ton accès actuel reste intact en cas de souci.
-            </p>
-            <label>
-              <span>Nom de l'utilisateur à créer</span>
-              <input bind:value={devUsername} placeholder="dev" autocomplete="off" />
-            </label>
-            <button
-              class="btn primary"
-              type="button"
-              onclick={hardenServer}
-              disabled={!canTest || hardening}
-            >
-              {#if hardening}
-                <Icon name="spinner" size={16} spin /> Sécurisation…
-              {:else}
-                <Icon name="lock" size={16} /> Sécuriser le serveur
-              {/if}
-            </button>
-          </div>
-        {/if}
-
-        {#if hardenReport}
-          <div class="steps">
-            {#each hardenReport.steps as s (s.key)}
-              <div class="step {s.status}">
-                <Icon name={stepIcon(s.status)} size={16} />
-                <div>
-                  <span>{s.label}</span>
-                  {#if s.detail}<em>{s.detail}</em>{/if}
-                </div>
+          {#if username.trim() === "root"}
+            <div class="harden-box" in:fly={{ y: 10, duration: 280, easing: quintOut }}>
+              <div class="harden-head">
+                <Icon name="lock" size={18} /> Sécuriser ce serveur <span class="tag">recommandé</span>
               </div>
-            {/each}
-            <div class="harden-msg {hardenReport.success ? 'ok' : 'err'}">
-              <Icon name={hardenReport.success ? "check" : "alert"} size={16} />
-              {hardenReport.message}
+              <p>
+                Beacon va créer un utilisateur dédié, générer une clé SSH et désactiver le login
+                root et par mot de passe. Rien n'est désactivé tant que la nouvelle clé n'est pas
+                vérifiée — ton accès actuel reste intact en cas de souci.
+              </p>
+              <label>
+                <span>Nom de l'utilisateur à créer</span>
+                <input bind:value={devUsername} placeholder="dev" autocomplete="off" />
+              </label>
+              <button class="btn primary" type="button" onclick={hardenServer} disabled={!canTest || hardening}>
+                {#if hardening}<Icon name="spinner" size={16} spin /> Sécurisation…{:else}<Icon
+                    name="lock"
+                    size={16}
+                  /> Sécuriser le serveur{/if}
+              </button>
             </div>
-          </div>
-        {/if}
-      </section>
-    {/if}
+          {/if}
+
+          {#if hardenReport}
+            <div class="steps">
+              {#each hardenReport.steps as s, i (s.key)}
+                <div class="step {s.status}" in:fly={{ x: -8, duration: 240, delay: i * 40, easing: quintOut }}>
+                  <Icon name={stepIcon(s.status)} size={16} />
+                  <div>
+                    <span>{s.label}</span>
+                    {#if s.detail}<em>{s.detail}</em>{/if}
+                  </div>
+                </div>
+              {/each}
+              <div class="harden-msg {hardenReport.success ? 'ok' : 'err'}" in:fade={{ duration: 300 }}>
+                <Icon name={hardenReport.success ? "check" : "alert"} size={16} />
+                {hardenReport.message}
+              </div>
+            </div>
+          {/if}
+        </section>
+      {/if}
 
       <p class="privacy">
         <Icon name="lock" size={13} /> 100 % local — aucune donnée ne quitte ta machine, hors la connexion à ton serveur.
@@ -438,63 +427,52 @@
 {/if}
 
 <style>
-  :global(*) {
-    box-sizing: border-box;
-  }
-  :global(html),
-  :global(body) {
-    margin: 0;
-    height: 100%;
-    overflow-x: hidden;
-  }
   main {
     min-height: 100vh;
     display: grid;
     place-items: start center;
-    padding: 2.5rem 1rem 3rem;
-    font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-    color: #e7ecf3;
-    background: radial-gradient(1200px 700px at 50% -12%, #1b2a4a 0%, #0c1220 55%, #080b14 100%);
+    padding: 3rem 1rem 3rem;
+    color: #f4f4f5;
   }
   .shell {
     width: 100%;
-    max-width: 620px;
+    max-width: 640px;
   }
 
   header {
     display: flex;
     align-items: center;
     gap: 0.9rem;
-    margin-bottom: 1.6rem;
+    margin-bottom: 1.7rem;
   }
   .brand-icon {
     display: grid;
     place-items: center;
-    width: 52px;
-    height: 52px;
+    width: 50px;
+    height: 50px;
     border-radius: 15px;
-    background: linear-gradient(180deg, #3b82f6, #2563eb);
-    color: white;
-    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.4);
+    background: #fff;
+    color: #000;
+    box-shadow: 0 10px 30px rgba(255, 255, 255, 0.12);
   }
   h1 {
     margin: 0;
-    font-size: 1.55rem;
+    font-size: 1.5rem;
     letter-spacing: -0.02em;
   }
   .tagline {
     margin: 0.15rem 0 0;
-    color: #93a1bd;
+    color: rgba(255, 255, 255, 0.5);
     font-size: 0.85rem;
   }
 
   .panel {
-    background: rgba(20, 27, 44, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
     padding: 1.4rem;
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(12px);
+    box-shadow: 0 30px 70px rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(16px);
   }
   .panel-head {
     display: flex;
@@ -504,17 +482,26 @@
   }
   h2 {
     margin: 0;
-    font-size: 1.05rem;
+    font-size: 1.08rem;
   }
 
   .empty {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.7rem;
-    padding: 2.4rem 1rem;
-    color: #8695b3;
+    gap: 0.8rem;
+    padding: 2.6rem 1rem;
+    color: rgba(255, 255, 255, 0.5);
     text-align: center;
+  }
+  .empty-icon {
+    display: grid;
+    place-items: center;
+    width: 64px;
+    height: 64px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.7);
   }
   .empty p {
     margin: 0;
@@ -526,18 +513,29 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.7rem;
   }
   .card {
-    background: rgba(9, 13, 24, 0.55);
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 15px;
     padding: 0.9rem 1rem;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 0.7rem;
+    transition:
+      transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+      background 0.22s ease,
+      border-color 0.22s ease,
+      box-shadow 0.22s ease;
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(255, 255, 255, 0.16);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4);
   }
   .card-main {
     display: flex;
@@ -550,9 +548,13 @@
     place-items: center;
     width: 40px;
     height: 40px;
-    border-radius: 11px;
-    background: rgba(59, 130, 246, 0.16);
-    color: #7ab0ff;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .card:hover .card-icon {
+    transform: scale(1.06);
   }
   .card-info {
     display: flex;
@@ -564,33 +566,26 @@
     font-size: 0.98rem;
   }
   .sub {
-    color: #93a1bd;
+    color: rgba(255, 255, 255, 0.5);
     font-size: 0.82rem;
   }
   .badge {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    color: #7d88a3;
+    color: rgba(255, 255, 255, 0.4);
     font-size: 0.74rem;
     margin-top: 0.1rem;
   }
   .pinned {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.2rem;
-    color: #62c082;
-    margin-left: 0.3rem;
+    color: rgba(255, 255, 255, 0.62);
   }
   .card-actions {
     display: flex;
     gap: 0.4rem;
   }
-  .pwd-prompt,
-  .feedback {
-    flex-basis: 100%;
-  }
   .pwd-prompt {
+    flex-basis: 100%;
     display: flex;
     gap: 0.4rem;
     margin-top: 0.3rem;
@@ -617,25 +612,26 @@
     flex-direction: column;
     gap: 0.35rem;
     font-size: 0.82rem;
-    color: #aeb9d1;
+    color: rgba(255, 255, 255, 0.6);
   }
   label em {
-    color: #7d88a3;
+    color: rgba(255, 255, 255, 0.35);
     font-style: normal;
   }
   input {
-    padding: 0.65rem 0.8rem;
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(9, 13, 24, 0.65);
-    color: #f2f5fa;
+    padding: 0.68rem 0.85rem;
+    border-radius: 11px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(0, 0, 0, 0.35);
+    color: #f4f4f5;
     font-size: 0.92rem;
-    transition: border-color 0.15s, box-shadow 0.15s;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
   }
   input:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+    border-color: rgba(255, 255, 255, 0.55);
+    background: rgba(0, 0, 0, 0.5);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.12);
   }
   .file-row {
     display: flex;
@@ -647,8 +643,8 @@
 
   .auth-toggle {
     display: flex;
-    gap: 0.4rem;
-    background: rgba(9, 13, 24, 0.6);
+    gap: 0.3rem;
+    background: rgba(0, 0, 0, 0.35);
     padding: 0.3rem;
     border-radius: 12px;
   }
@@ -662,14 +658,14 @@
     border: none;
     border-radius: 9px;
     background: transparent;
-    color: #aeb9d1;
+    color: rgba(255, 255, 255, 0.55);
     font-size: 0.86rem;
     cursor: pointer;
-    transition: background 0.15s, color 0.15s;
+    transition: background 0.2s ease, color 0.2s ease;
   }
   .auth-toggle button.active {
-    background: #2563eb;
-    color: white;
+    background: #fff;
+    color: #000;
   }
 
   .actions {
@@ -677,60 +673,75 @@
     gap: 0.5rem;
     margin-top: 0.3rem;
   }
+  .actions .btn {
+    flex: 1;
+  }
+
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.4rem;
     padding: 0.65rem 1rem;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.16);
     border-radius: 11px;
-    background: rgba(255, 255, 255, 0.05);
-    color: #e7ecf3;
+    background: rgba(255, 255, 255, 0.06);
+    color: #f4f4f5;
     font-size: 0.9rem;
     font-weight: 500;
     cursor: pointer;
-    transition: filter 0.15s, background 0.15s, opacity 0.15s;
+    transition:
+      transform 0.16s cubic-bezier(0.22, 1, 0.36, 1),
+      background 0.18s ease,
+      filter 0.18s ease,
+      opacity 0.18s ease;
   }
   .btn.sm {
-    padding: 0.5rem 0.7rem;
+    padding: 0.5rem 0.75rem;
     font-size: 0.84rem;
   }
+  .btn.icon {
+    padding: 0.5rem;
+  }
   .btn.primary {
-    border: none;
-    background: linear-gradient(180deg, #3b82f6, #2563eb);
-    color: white;
+    border: 1px solid transparent;
+    background: #fff;
+    color: #000;
   }
   .btn.ghost {
     background: transparent;
   }
   .btn:hover:not(:disabled) {
-    filter: brightness(1.1);
+    background: rgba(255, 255, 255, 0.14);
+    transform: translateY(-1px);
+  }
+  .btn.primary:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.88);
+  }
+  .btn:active:not(:disabled) {
+    transform: translateY(0) scale(0.97);
   }
   .btn:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     cursor: not-allowed;
-  }
-  .actions .btn {
-    flex: 1;
   }
 
   .feedback {
     margin-top: 1rem;
     padding: 0.85rem 1rem;
-    border-radius: 12px;
+    border-radius: 13px;
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
     font-size: 0.86rem;
   }
   .feedback.ok {
-    background: rgba(22, 101, 52, 0.22);
-    border: 1px solid rgba(74, 222, 128, 0.32);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.16);
   }
   .feedback.err {
-    background: rgba(127, 29, 29, 0.22);
-    border: 1px solid rgba(248, 113, 113, 0.32);
+    background: rgba(255, 90, 90, 0.1);
+    border: 1px solid rgba(255, 120, 120, 0.32);
   }
   .fb-title {
     display: inline-flex;
@@ -741,22 +752,22 @@
   .feedback code {
     font-family: ui-monospace, "Cascadia Code", monospace;
     font-size: 0.78rem;
-    color: #c7f9cc;
+    color: rgba(255, 255, 255, 0.82);
     word-break: break-word;
   }
   .fp {
     font-family: ui-monospace, monospace;
     font-size: 0.72rem;
-    color: #8fd3a6;
+    color: rgba(255, 255, 255, 0.55);
     word-break: break-all;
   }
 
   .harden-box {
     margin-top: 1.1rem;
     padding: 1rem;
-    border-radius: 13px;
-    background: rgba(37, 99, 235, 0.1);
-    border: 1px solid rgba(59, 130, 246, 0.28);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.14);
     display: flex;
     flex-direction: column;
     gap: 0.7rem;
@@ -771,18 +782,18 @@
   .harden-box p {
     margin: 0;
     font-size: 0.82rem;
-    color: #aeb9d1;
+    color: rgba(255, 255, 255, 0.55);
     line-height: 1.45;
   }
   .tag {
-    font-size: 0.68rem;
-    font-weight: 600;
+    font-size: 0.66rem;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.04em;
     padding: 0.12rem 0.45rem;
     border-radius: 6px;
-    background: #2563eb;
-    color: white;
+    background: #fff;
+    color: #000;
   }
 
   .steps {
@@ -797,7 +808,7 @@
     gap: 0.55rem;
     padding: 0.55rem 0.75rem;
     border-radius: 10px;
-    background: rgba(9, 13, 24, 0.5);
+    background: rgba(255, 255, 255, 0.04);
     font-size: 0.86rem;
   }
   .step > div {
@@ -807,18 +818,18 @@
   }
   .step em {
     font-style: normal;
-    color: #8695b3;
+    color: rgba(255, 255, 255, 0.45);
     font-size: 0.78rem;
   }
   .step.ok {
-    color: #9fe6b6;
+    color: rgba(255, 255, 255, 0.85);
   }
   .step.skipped {
-    color: #b7c0d6;
+    color: rgba(255, 255, 255, 0.6);
   }
   .step.failed {
     color: #f7a8a8;
-    background: rgba(127, 29, 29, 0.2);
+    background: rgba(255, 90, 90, 0.12);
   }
   .harden-msg {
     display: flex;
@@ -826,18 +837,17 @@
     gap: 0.45rem;
     margin-top: 0.3rem;
     padding: 0.75rem 0.9rem;
-    border-radius: 11px;
+    border-radius: 12px;
     font-size: 0.86rem;
     font-weight: 500;
   }
   .harden-msg.ok {
-    background: rgba(22, 101, 52, 0.24);
-    border: 1px solid rgba(74, 222, 128, 0.32);
-    color: #c7f9cc;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.2);
   }
   .harden-msg.err {
-    background: rgba(127, 29, 29, 0.24);
-    border: 1px solid rgba(248, 113, 113, 0.32);
+    background: rgba(255, 90, 90, 0.12);
+    border: 1px solid rgba(255, 120, 120, 0.32);
     color: #fecaca;
   }
 
@@ -846,8 +856,8 @@
     align-items: center;
     justify-content: center;
     gap: 0.4rem;
-    margin: 1.5rem 0 0;
+    margin: 1.6rem 0 0;
     font-size: 0.76rem;
-    color: #6f7b96;
+    color: rgba(255, 255, 255, 0.4);
   }
 </style>
