@@ -212,26 +212,28 @@
         <button class="btn" onclick={onBack}>Retour</button>
       </div>
     {:else}
-      <div class="apps-head">
-        <h2>Applications</h2>
-        <button class="icon-btn" title="Ajouter (bientôt)" disabled><Icon name="plus" size={18} /></button>
-      </div>
-      <div class="apps">
-        {#each APPS as app, i (app.label)}
-          <button
-            class="tile"
-            type="button"
-            title="Bientôt disponible"
-            in:fly={{ y: 16, duration: 340, delay: i * 45, easing: quintOut }}
-          >
-            <span class="tile-icon"><Icon name={app.icon} size={26} /></span>
-            <span class="tile-label">{app.label}</span>
-          </button>
-        {/each}
-      </div>
-      <p class="apps-note">
-        <Icon name="apps" size={14} /> Les conteneurs Docker de ton serveur apparaîtront ici au prochain jalon.
-      </p>
+      <section class="apps-panel" in:fly={{ y: 14, duration: 360, easing: quintOut }}>
+        <div class="apps-head">
+          <h2>Applications</h2>
+          <button class="icon-btn" title="Ajouter (bientôt)" disabled><Icon name="plus" size={18} /></button>
+        </div>
+        <div class="apps">
+          {#each APPS as app, i (app.label)}
+            <button
+              class="tile"
+              type="button"
+              title="Bientôt disponible"
+              in:fly={{ y: 16, duration: 340, delay: i * 45, easing: quintOut }}
+            >
+              <span class="tile-icon"><Icon name={app.icon} size={26} /></span>
+              <span class="tile-label">{app.label}</span>
+            </button>
+          {/each}
+        </div>
+        <p class="apps-note">
+          <Icon name="apps" size={14} /> Les conteneurs Docker de ton serveur apparaîtront ici au prochain jalon.
+        </p>
+      </section>
     {/if}
   </main>
 </div>
@@ -509,11 +511,19 @@
     font-size: 0.76rem;
   }
 
+  .apps-panel {
+    padding: 1.4rem;
+    border-radius: 18px;
+    background: rgba(22, 22, 24, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(22px) saturate(1.1);
+    -webkit-backdrop-filter: blur(22px) saturate(1.1);
+  }
   .apps-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 1rem;
+    margin-bottom: 1.1rem;
   }
   .apps-head h2 {
     margin: 0;
@@ -542,11 +552,9 @@
     height: 64px;
     border-radius: 18px;
     color: #fff;
-    background: rgba(30, 30, 33, 0.55);
+    background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.12);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
-    backdrop-filter: blur(18px) saturate(1.1);
-    -webkit-backdrop-filter: blur(18px) saturate(1.1);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
     transition:
       transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
       background 0.22s ease,
