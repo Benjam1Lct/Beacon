@@ -556,12 +556,15 @@
     background: #000;
   }
   .card .btn.ghost.icon {
-    color: #dc2626;
-    border-color: rgba(220, 38, 38, 0.35);
-    background: rgba(220, 38, 38, 0.06);
+    color: #16181d;
+    border-color: rgba(0, 0, 0, 0.12);
+    background: transparent;
+    transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
   }
   .card .btn.ghost.icon:hover:not(:disabled) {
-    background: rgba(220, 38, 38, 0.14);
+    color: #dc2626;
+    border-color: rgba(220, 38, 38, 0.4);
+    background: rgba(220, 38, 38, 0.1);
   }
   .card .pwd-prompt input {
     background: rgba(0, 0, 0, 0.04);
