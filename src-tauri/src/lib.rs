@@ -29,6 +29,7 @@ pub fn run() {
             commands::install_docker,
             commands::caddy_status,
             commands::install_caddy,
+            commands::read_routes,
             commands::apply_routes,
             commands::check_routes,
             commands::list_dir,

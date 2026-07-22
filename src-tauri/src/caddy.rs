@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CaddyRoute {
     pub domain: String,
@@ -131,6 +131,109 @@ pub fn parse_info(raw: &str) -> CaddyInfo {
 
 fn quote(p: &str) -> String {
     format!("'{}'", p.replace('\'', "'\\''"))
+}
+
+/// Commande pour lire le Caddyfile courant selon le mode détecté.
+pub fn read_config_cmd(info: &CaddyInfo) -> String {
+    if info.mode == "docker" {
+        match (&info.container, &info.config_dst) {
+            (Some(cont), Some(dst)) => {
+                format!("docker exec {} cat {} 2>/dev/null", quote(cont), quote(dst))
+            }
+            _ => match &info.config_src {
+                Some(src) => format!(
+                    "if [ \"$(id -u)\" = 0 ]; then cat {s} 2>/dev/null; else sudo -n cat {s} 2>/dev/null || cat {s} 2>/dev/null; fi",
+                    s = quote(src)
+                ),
+                None => "true".to_string(),
+            },
+        }
+    } else {
+        "cat /etc/caddy/Caddyfile 2>/dev/null".to_string()
+    }
+}
+
+/// Parse (grossièrement) un Caddyfile pour en extraire les liaisons (domaine -> port).
+pub fn parse_caddyfile(raw: &str) -> Vec<CaddyRoute> {
+    let mut routes = Vec::new();
+    let mut depth = 0i32;
+    let mut addr = String::new();
+    let mut ssl = String::new();
+    let mut port: Option<u16> = None;
+
+    for line in raw.lines() {
+        let l = line.trim();
+        if l.is_empty() || l.starts_with('#') {
+            continue;
+        }
+
+        if depth == 0 {
+            if let Some(idx) = l.find('{') {
+                let head = l[..idx].trim();
+                if !head.is_empty() && !head.starts_with('(') {
+                    addr = head.to_string();
+                    ssl = if addr.starts_with("http://") {
+                        "none".into()
+                    } else {
+                        "public".into()
+                    };
+                    port = None;
+                }
+            }
+            depth += l.matches('{').count() as i32 - l.matches('}').count() as i32;
+            continue;
+        }
+
+        if l.contains("reverse_proxy") {
+            if let Some(rest) = l.split("reverse_proxy").nth(1) {
+                if let Some(tok) = rest.split_whitespace().next() {
+                    let t = tok
+                        .trim_start_matches("http://")
+                        .trim_start_matches("https://");
+                    if let Some(p) = t
+                        .rsplit(':')
+                        .next()
+                        .and_then(|s| s.trim_end_matches('{').trim().parse::<u16>().ok())
+                    {
+                        port = Some(p);
+                    }
+                }
+            }
+        }
+        if l.contains("tls internal") {
+            ssl = "local".into();
+        }
+
+        let before = depth;
+        depth += l.matches('{').count() as i32 - l.matches('}').count() as i32;
+        if before > 0 && depth <= 0 {
+            depth = 0;
+            let domain = addr
+                .split(',')
+                .next()
+                .unwrap_or(&addr)
+                .trim()
+                .trim_start_matches("http://")
+                .trim_start_matches("https://")
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_string();
+            if !domain.is_empty() && !domain.starts_with(':') && domain.contains('.') {
+                routes.push(CaddyRoute {
+                    domain,
+                    target_port: port.unwrap_or(80),
+                    ssl: if ssl.is_empty() {
+                        "public".into()
+                    } else {
+                        ssl.clone()
+                    },
+                });
+            }
+            addr.clear();
+        }
+    }
+    routes
 }
 
 /// Commande d'application selon le mode (système ou Docker).

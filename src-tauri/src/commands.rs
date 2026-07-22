@@ -270,6 +270,32 @@ pub async fn install_caddy(
     }
 }
 
+/// Lit les liaisons déjà présentes dans le Caddyfile du serveur.
+#[tauri::command]
+pub async fn read_routes(
+    app: AppHandle,
+    id: String,
+    password: Option<String>,
+) -> Result<Vec<CaddyRoute>, String> {
+    let dir = data_dir(&app)?;
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
+    let info_out = ssh::exec(&profile, caddy::STATUS_CMD, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    let info = caddy::parse_info(&info_out.result.stdout);
+    if !info.installed {
+        return Ok(Vec::new());
+    }
+    let out = ssh::exec(
+        &profile,
+        &caddy::read_config_cmd(&info),
+        meta.host_key_fp.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(caddy::parse_caddyfile(&out.result.stdout))
+}
+
 /// Applique les liaisons reverse proxy : génère le Caddyfile, valide et recharge Caddy.
 #[tauri::command]
 pub async fn apply_routes(

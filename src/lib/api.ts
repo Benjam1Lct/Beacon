@@ -93,6 +93,11 @@ export function installCaddy(id: string, password?: string): Promise<string> {
   return invoke<string>("install_caddy", { id, password: password ?? null });
 }
 
+/** Lit les liaisons déjà présentes dans le Caddyfile du serveur. */
+export function readRoutes(id: string, password?: string): Promise<CaddyRoute[]> {
+  return invoke<CaddyRoute[]>("read_routes", { id, password: password ?? null });
+}
+
 /** Applique les liaisons reverse proxy (génère + recharge Caddy). */
 export function applyRoutes(id: string, routes: CaddyRoute[], password?: string): Promise<void> {
   return invoke<void>("apply_routes", { id, routes, password: password ?? null });

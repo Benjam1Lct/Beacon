@@ -3,7 +3,7 @@
   import { fade, fly, scale, slide } from "svelte/transition";
   import { quintOut } from "svelte/easing";
   import Icon from "$lib/Icon.svelte";
-  import { applyRoutes, caddyStatus, checkRoutes, dockerList, installCaddy } from "$lib/api";
+  import { applyRoutes, caddyStatus, checkRoutes, dockerList, installCaddy, readRoutes } from "$lib/api";
   import type { CaddyInfo, CaddyRoute, Container, RouteHealth, SslMode } from "$lib/types";
 
   let {
@@ -140,14 +140,37 @@
   const cableColor = { ok: "#4ade80", error: "#f87171", pending: "#eab308" };
 
   onMount(async () => {
+    let local: Route[] = [];
     try {
-      routes = JSON.parse(localStorage.getItem(RK) || "[]");
+      local = JSON.parse(localStorage.getItem(RK) || "[]");
     } catch {
-      routes = [];
+      local = [];
     }
     info = await caddyStatus(profileId, password).catch(
       () => ({ installed: false, mode: "none", container: null, configSrc: null, configDst: null }) as CaddyInfo,
     );
+
+    // Importe les liaisons déjà présentes dans le Caddyfile du serveur.
+    let server: Route[] = [];
+    if (info?.installed) {
+      try {
+        const sr = await readRoutes(profileId, password);
+        server = sr.map((r) => ({
+          id: crypto.randomUUID?.() ?? `r-${r.domain}`,
+          domain: r.domain,
+          container: "",
+          targetPort: r.targetPort,
+          ssl: r.ssl,
+        }));
+      } catch {
+        server = [];
+      }
+    }
+    // Fusion : serveur en priorité, + liaisons locales dont le domaine n'existe pas déjà.
+    const domains = new Set(server.map((r) => r.domain));
+    routes = [...server, ...local.filter((r) => !domains.has(r.domain))];
+    persist();
+
     try {
       const s = await dockerList(profileId, password);
       containers = s.containers;
