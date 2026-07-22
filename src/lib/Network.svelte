@@ -31,6 +31,7 @@
 
   let info = $state<CaddyInfo | null>(null);
   const installed = $derived(info?.installed ?? null);
+  let loading = $state(true);
   let installing = $state(false);
   let installErr = $state<string | null>(null);
 
@@ -189,6 +190,7 @@
 
   onMount(async () => {
     loadCache(); // affichage instantané du dernier état connu (vert direct)
+    if (routes.length > 0) loading = false; // cache présent -> pas de spinner
 
     info = await caddyStatus(profileId, password).catch(
       () => ({ installed: false, mode: "none", container: null, configSrc: null, configDst: null }) as CaddyInfo,
@@ -203,6 +205,7 @@
     }
     await check();
     saveCache();
+    loading = false; // analyse terminée -> affichage final (sans état intermédiaire)
   });
 </script>
 
@@ -222,11 +225,9 @@
       <button class="icon-btn" onclick={onClose}><Icon name="close" size={18} /></button>
     </div>
 
-    {#if installed === null}
-      <div class="state"><Icon name="spinner" size={22} spin /> Vérification de Caddy…</div>
-    {:else if !installed}
+    {#if installed === false}
       <div class="install">
-        <div class="install-icon"><Icon name="link" size={30} /></div>
+        <div class="install-icon"><Icon name="globe" size={30} /></div>
         <p class="install-title">Caddy est requis pour le reverse proxy</p>
         <p class="muted">
           Caddy gère le HTTPS automatiquement (Let's Encrypt) et les certificats locaux. Beacon
@@ -237,6 +238,8 @@
           {#if installing}<Icon name="spinner" size={16} spin /> Installation…{:else}Installer Caddy{/if}
         </button>
       </div>
+    {:else if loading}
+      <div class="state"><Icon name="spinner" size={22} spin /> Analyse du reverse proxy…</div>
     {:else}
       <div class="mode-note">
         <Icon name="check" size={14} />
