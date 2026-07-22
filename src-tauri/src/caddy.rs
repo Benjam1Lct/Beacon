@@ -52,19 +52,121 @@ pub fn generate(routes: &[CaddyRoute]) -> String {
     out
 }
 
-/// Commande d'application : écrit le Caddyfile, le valide et recharge Caddy.
-pub fn apply_cmd(caddyfile: &str) -> String {
-    format!(
-        "set -e\n\
-         if [ \"$(id -u)\" = 0 ]; then SUDO=\"\"; else SUDO=\"sudo -n\"; fi\n\
-         $SUDO mkdir -p /etc/caddy\n\
-         cat <<'BEACON_CADDY_EOF' | $SUDO tee /etc/caddy/Caddyfile >/dev/null\n\
-         {caddyfile}\n\
-         BEACON_CADDY_EOF\n\
-         $SUDO caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile\n\
-         $SUDO systemctl reload caddy 2>/dev/null || $SUDO systemctl restart caddy\n\
-         echo DONE"
-    )
+/// Où et comment Caddy tourne sur le serveur.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaddyInfo {
+    pub installed: bool,
+    pub mode: String, // "system" | "docker" | "none"
+    pub container: Option<String>,
+    /// Chemin hôte du Caddyfile (pour écrire) — mode docker.
+    pub config_src: Option<String>,
+    /// Chemin du Caddyfile dans le conteneur (pour recharger) — mode docker.
+    pub config_dst: Option<String>,
+}
+
+/// Détection : Caddy système, ou conteneur Docker dont l'image contient "caddy".
+pub const STATUS_CMD: &str = "if command -v caddy >/dev/null 2>&1 || [ -x /usr/bin/caddy ] \
+     || [ -x /usr/local/bin/caddy ] || systemctl list-unit-files 2>/dev/null | grep -q '^caddy'; then\n\
+       echo 'MODE system'\n\
+     elif command -v docker >/dev/null 2>&1 && CONT=$(docker ps --format '{{.Names}};{{.Image}}' 2>/dev/null | grep -i caddy | head -1 | cut -d';' -f1) && [ -n \"$CONT\" ]; then\n\
+       echo 'MODE docker'\n\
+       echo \"CONTAINER $CONT\"\n\
+       echo '===MOUNTS==='\n\
+       docker inspect \"$CONT\" --format '{{range .Mounts}}{{.Source}};{{.Destination}}{{\"\\n\"}}{{end}}' 2>/dev/null\n\
+     else\n\
+       echo 'MODE none'\n\
+     fi";
+
+/// Parse la sortie de `STATUS_CMD`.
+pub fn parse_info(raw: &str) -> CaddyInfo {
+    let mut mode = "none".to_string();
+    let mut container = None;
+    let mut mounts: Vec<(String, String)> = Vec::new();
+    let mut in_mounts = false;
+
+    for line in raw.lines() {
+        let l = line.trim();
+        if let Some(m) = l.strip_prefix("MODE ") {
+            mode = m.trim().to_string();
+        } else if let Some(c) = l.strip_prefix("CONTAINER ") {
+            container = Some(c.trim().to_string());
+        } else if l == "===MOUNTS===" {
+            in_mounts = true;
+        } else if in_mounts && !l.is_empty() {
+            if let Some((src, dst)) = l.split_once(';') {
+                mounts.push((src.to_string(), dst.to_string()));
+            }
+        }
+    }
+
+    // Cherche le Caddyfile parmi les montages.
+    let (mut config_src, mut config_dst) = (None, None);
+    for (src, dst) in &mounts {
+        if dst.rsplit('/').next() == Some("Caddyfile") {
+            config_src = Some(src.clone());
+            config_dst = Some(dst.clone());
+            break;
+        }
+    }
+    if config_src.is_none() {
+        for (src, dst) in &mounts {
+            let base = dst.trim_end_matches('/').rsplit('/').next().unwrap_or("");
+            if dst == "/etc/caddy" || base == "caddy" {
+                config_src = Some(format!("{}/Caddyfile", src.trim_end_matches('/')));
+                config_dst = Some(format!("{}/Caddyfile", dst.trim_end_matches('/')));
+                break;
+            }
+        }
+    }
+
+    CaddyInfo {
+        installed: mode != "none",
+        mode,
+        container,
+        config_src,
+        config_dst,
+    }
+}
+
+fn quote(p: &str) -> String {
+    format!("'{}'", p.replace('\'', "'\\''"))
+}
+
+/// Commande d'application selon le mode (système ou Docker).
+pub fn apply_cmd(caddyfile: &str, info: &CaddyInfo) -> Result<String, String> {
+    if info.mode == "docker" {
+        let (src, dst, cont) = match (&info.config_src, &info.config_dst, &info.container) {
+            (Some(s), Some(d), Some(c)) => (s, d, c),
+            _ => {
+                return Err("Caddy tourne dans Docker mais son Caddyfile n'est pas monté depuis l'hôte. Ajoute un volume (ex: -v /srv/caddy/Caddyfile:/etc/caddy/Caddyfile) pour que Beacon puisse le gérer.".into());
+            }
+        };
+        Ok(format!(
+            "set -e\n\
+             if [ \"$(id -u)\" = 0 ]; then SUDO=\"\"; else SUDO=\"sudo -n\"; fi\n\
+             cat <<'BEACON_CADDY_EOF' | $SUDO tee {src} >/dev/null\n\
+             {caddyfile}\n\
+             BEACON_CADDY_EOF\n\
+             docker exec {cont} caddy reload --config {dst} --adapter caddyfile 2>/dev/null || docker restart {cont}\n\
+             echo DONE",
+            src = quote(src),
+            dst = quote(dst),
+            cont = quote(cont),
+        ))
+    } else {
+        Ok(format!(
+            "set -e\n\
+             if [ \"$(id -u)\" = 0 ]; then SUDO=\"\"; else SUDO=\"sudo -n\"; fi\n\
+             $SUDO mkdir -p /etc/caddy\n\
+             cat <<'BEACON_CADDY_EOF' | $SUDO tee /etc/caddy/Caddyfile >/dev/null\n\
+             {caddyfile}\n\
+             BEACON_CADDY_EOF\n\
+             $SUDO caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile\n\
+             $SUDO systemctl reload caddy 2>/dev/null || $SUDO systemctl restart caddy\n\
+             echo DONE"
+        ))
+    }
 }
 
 /// Détection + installation de Caddy (dépôt officiel, Debian/Ubuntu).
@@ -77,12 +179,6 @@ pub const INSTALL_CMD: &str = "set -e\n\
      $SUDO apt-get update\n\
      $SUDO apt-get install -y caddy\n\
      echo DONE";
-
-/// Vérifie que Caddy est présent (PATH, chemins courants ou unité systemd).
-pub const STATUS_CMD: &str = "if command -v caddy >/dev/null 2>&1 \
-     || [ -x /usr/bin/caddy ] || [ -x /usr/local/bin/caddy ] \
-     || systemctl list-unit-files 2>/dev/null | grep -q '^caddy'; \
-     then echo INSTALLED; else echo MISSING; fi";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

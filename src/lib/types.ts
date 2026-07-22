@@ -106,6 +106,14 @@ export interface FilePreview {
   truncated: boolean;
 }
 
+export interface CaddyInfo {
+  installed: boolean;
+  mode: "system" | "docker" | "none";
+  container: string | null;
+  configSrc: string | null;
+  configDst: string | null;
+}
+
 export type SslMode = "public" | "local" | "none";
 export interface CaddyRoute {
   domain: string;

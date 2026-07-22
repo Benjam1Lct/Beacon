@@ -3,6 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
+  CaddyInfo,
   CaddyRoute,
   DirListing,
   FilePreview,
@@ -81,9 +82,9 @@ export function installDocker(id: string, password?: string): Promise<string> {
   return invoke<string>("install_docker", { id, password: password ?? null });
 }
 
-/** Indique si Caddy est installé. */
-export function caddyStatus(id: string, password?: string): Promise<boolean> {
-  return invoke<boolean>("caddy_status", { id, password: password ?? null });
+/** Détecte Caddy (système ou conteneur Docker). */
+export function caddyStatus(id: string, password?: string): Promise<CaddyInfo> {
+  return invoke<CaddyInfo>("caddy_status", { id, password: password ?? null });
 }
 
 /** Installe Caddy (dépôt officiel). */

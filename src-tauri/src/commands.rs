@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use tauri::{AppHandle, Manager};
 
-use crate::caddy::{self, CaddyRoute, RouteHealth};
+use crate::caddy::{self, CaddyInfo, CaddyRoute, RouteHealth};
 use crate::docker::{self, DeployConfig, DockerStatus};
 use crate::files::{self, DirListing, FilePreview};
 use crate::hardening::{self, HardenInput, HardeningReport};
@@ -220,19 +220,19 @@ pub async fn read_file(
     Ok(files::parse_preview(&out.result.stdout, &name))
 }
 
-/// Indique si Caddy est installé sur le serveur.
+/// Détecte Caddy (système ou conteneur Docker) et renvoie comment il tourne.
 #[tauri::command]
 pub async fn caddy_status(
     app: AppHandle,
     id: String,
     password: Option<String>,
-) -> Result<bool, String> {
+) -> Result<CaddyInfo, String> {
     let dir = data_dir(&app)?;
     let (profile, meta) = resolve_profile(&dir, &id, password)?;
     let out = ssh::exec(&profile, caddy::STATUS_CMD, meta.host_key_fp.as_deref())
         .await
         .map_err(|e| e.to_string())?;
-    Ok(out.result.stdout.contains("INSTALLED"))
+    Ok(caddy::parse_info(&out.result.stdout))
 }
 
 /// Installe Caddy (dépôt officiel).
@@ -263,9 +263,16 @@ pub async fn apply_routes(
     password: Option<String>,
 ) -> Result<(), String> {
     let caddyfile = caddy::generate(&routes);
-    let cmd = caddy::apply_cmd(&caddyfile);
     let dir = data_dir(&app)?;
     let (profile, meta) = resolve_profile(&dir, &id, password)?;
+
+    // Détecte le mode (système / docker) pour appliquer au bon endroit.
+    let info_out = ssh::exec(&profile, caddy::STATUS_CMD, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    let info = caddy::parse_info(&info_out.result.stdout);
+    let cmd = caddy::apply_cmd(&caddyfile, &info)?;
+
     let out = ssh::exec(&profile, &cmd, meta.host_key_fp.as_deref())
         .await
         .map_err(|e| e.to_string())?;

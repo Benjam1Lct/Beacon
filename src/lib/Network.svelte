@@ -4,7 +4,7 @@
   import { quintOut } from "svelte/easing";
   import Icon from "$lib/Icon.svelte";
   import { applyRoutes, caddyStatus, checkRoutes, dockerList, installCaddy } from "$lib/api";
-  import type { CaddyRoute, Container, RouteHealth, SslMode } from "$lib/types";
+  import type { CaddyInfo, CaddyRoute, Container, RouteHealth, SslMode } from "$lib/types";
 
   let {
     profileId,
@@ -14,7 +14,8 @@
 
   type Route = { id: string; domain: string; container: string; targetPort: number; ssl: SslMode };
 
-  let installed = $state<boolean | null>(null);
+  let info = $state<CaddyInfo | null>(null);
+  const installed = $derived(info?.installed ?? null);
   let installing = $state(false);
   let installErr = $state<string | null>(null);
 
@@ -115,7 +116,7 @@
     installErr = null;
     try {
       await installCaddy(profileId, password);
-      installed = true;
+      info = { installed: true, mode: "system", container: null, configSrc: null, configDst: null };
     } catch (e) {
       installErr = String(e);
     } finally {
@@ -144,7 +145,9 @@
     } catch {
       routes = [];
     }
-    installed = await caddyStatus(profileId, password).catch(() => false);
+    info = await caddyStatus(profileId, password).catch(
+      () => ({ installed: false, mode: "none", container: null, configSrc: null, configDst: null }) as CaddyInfo,
+    );
     try {
       const s = await dockerList(profileId, password);
       containers = s.containers;
@@ -166,7 +169,7 @@
 >
   <div class="net" role="dialog" aria-modal="true" transition:scale={{ duration: 200, start: 0.96, easing: quintOut }}>
     <div class="net-head">
-      <span class="net-icon"><Icon name="link" size={20} /></span>
+      <span class="net-icon"><Icon name="globe" size={20} /></span>
       <h2>Réseau — Reverse proxy</h2>
       <button class="icon-btn" onclick={onClose}><Icon name="close" size={18} /></button>
     </div>
@@ -187,6 +190,15 @@
         </button>
       </div>
     {:else}
+      <div class="mode-note">
+        <Icon name="check" size={14} />
+        {#if info?.mode === "docker"}
+          Caddy détecté dans le conteneur <strong>{info.container}</strong>{#if !info.configSrc}
+            — mais son Caddyfile n'est pas monté depuis l'hôte, Beacon ne pourra pas le gérer automatiquement.{:else}. Beacon écrit dans son Caddyfile monté et recharge le conteneur.{/if}
+        {:else}
+          Caddy est installé (système). Beacon gère <code>/etc/caddy/Caddyfile</code>.
+        {/if}
+      </div>
       {#if applyErr}<div class="err">{applyErr}</div>{/if}
 
       {#if routes.length === 0}
@@ -559,5 +571,25 @@
     font-size: 0.84rem;
     margin-bottom: 0.8rem;
     word-break: break-word;
+  }
+  .mode-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    padding: 0.6rem 0.8rem;
+    border-radius: 11px;
+    background: rgba(74, 222, 128, 0.1);
+    border: 1px solid rgba(74, 222, 128, 0.25);
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.8rem;
+    margin-bottom: 0.9rem;
+  }
+  .mode-note strong {
+    color: #fff;
+  }
+  .mode-note code {
+    font-family: ui-monospace, monospace;
+    font-size: 0.76rem;
+    color: #bbf7d0;
   }
 </style>
