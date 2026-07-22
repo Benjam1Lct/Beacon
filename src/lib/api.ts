@@ -83,6 +83,16 @@ export function installDocker(id: string, password?: string): Promise<string> {
   return invoke<string>("install_docker", { id, password: password ?? null });
 }
 
+/** Déploie une stack multi-conteneurs (docker compose up -d). */
+export function composeUp(id: string, name: string, yaml: string, password?: string): Promise<void> {
+  return invoke<void>("compose_up", { id, name, yaml, password: password ?? null });
+}
+
+/** Arrête et retire une stack (docker compose down). */
+export function composeDown(id: string, name: string, password?: string): Promise<void> {
+  return invoke<void>("compose_down", { id, name, password: password ?? null });
+}
+
 /** Détecte Caddy (système ou conteneur Docker). */
 export function caddyStatus(id: string, password?: string): Promise<CaddyInfo> {
   return invoke<CaddyInfo>("caddy_status", { id, password: password ?? null });

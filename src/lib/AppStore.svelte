@@ -3,7 +3,7 @@
   import { fade, fly, scale } from "svelte/transition";
   import { quintOut } from "svelte/easing";
   import Icon from "$lib/Icon.svelte";
-  import { deployApp, dockerList, installDocker } from "$lib/api";
+  import { composeUp, deployApp, dockerList, installDocker } from "$lib/api";
   import { CATALOG, genPassword, type AppTemplate, type DeployConfig } from "$lib/catalog";
 
   let {
@@ -80,18 +80,29 @@
 
   async function install() {
     if (!selected) return;
+    const name = cfgName.trim();
     deploying = true;
     deployErr = null;
     try {
-      const config: DeployConfig = {
-        name: cfgName.trim(),
-        image: selected.image,
-        ports: selected.ports.map((p, i) => ({ host: cfgPorts[i], container: p.container })),
-        env: cfgEnv.map((e) => ({ key: e.key, value: e.value })),
-        volumes: selected.volumes.map((v) => v.replace(/\{name\}/g, cfgName.trim())),
-      };
-      await deployApp(profileId, config, password);
-      deployOk = `Conteneur « ${cfgName.trim()} » déployé.`;
+      if (selected.compose) {
+        // App multi-conteneurs : substitue les placeholders et lance docker compose.
+        let yaml = selected.compose
+          .replace(/\{\{NAME\}\}/g, name)
+          .replace(/\{\{PORT\}\}/g, String(cfgPorts[0]));
+        for (const e of cfgEnv) yaml = yaml.split(`{{${e.key}}}`).join(e.value);
+        await composeUp(profileId, name, yaml, password);
+        deployOk = `Stack « ${name} » déployée (${cfgPorts[0] ? `port ${cfgPorts[0]}` : "en cours"}).`;
+      } else {
+        const config: DeployConfig = {
+          name,
+          image: selected.image,
+          ports: selected.ports.map((p, i) => ({ host: cfgPorts[i], container: p.container })),
+          env: cfgEnv.map((e) => ({ key: e.key, value: e.value })),
+          volumes: selected.volumes.map((v) => v.replace(/\{name\}/g, name)),
+        };
+        await deployApp(profileId, config, password);
+        deployOk = `Conteneur « ${name} » déployé.`;
+      }
       onDeployed();
     } catch (e) {
       deployErr = String(e);

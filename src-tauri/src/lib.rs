@@ -1,5 +1,6 @@
 mod caddy;
 mod commands;
+mod compose;
 mod docker;
 mod files;
 mod hardening;
@@ -26,6 +27,8 @@ pub fn run() {
             commands::docker_action,
             commands::docker_logs,
             commands::deploy_app,
+            commands::compose_up,
+            commands::compose_down,
             commands::install_docker,
             commands::caddy_status,
             commands::install_caddy,

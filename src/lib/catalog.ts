@@ -38,6 +38,8 @@ export interface AppTemplate {
   ports: CatPort[];
   env: CatEnv[];
   volumes: string[]; // {name} remplacé par le nom du conteneur
+  /** Si présent : app multi-conteneurs (docker compose). Placeholders {{NAME}} {{PORT}} {{KEY}}. */
+  compose?: string;
 }
 
 export const CATALOG: AppTemplate[] = [
@@ -154,6 +156,92 @@ export const CATALOG: AppTemplate[] = [
     ports: [{ container: 8080, defaultHost: 8082 }],
     env: [],
     volumes: [],
+  },
+  {
+    id: "umami",
+    name: "Umami",
+    mono: "Um",
+    color: "#000000",
+    category: "Analytics",
+    description: "Analytics web (visiteurs, pays, référents) respectueux de la vie privée.",
+    image: "ghcr.io/umami-software/umami:postgresql-latest",
+    ports: [{ container: 3000, defaultHost: 3000 }],
+    env: [
+      { key: "PASSWORD", generate: true, label: "Mot de passe base de données" },
+      { key: "SECRET", generate: true, label: "Clé secrète" },
+    ],
+    volumes: [],
+    compose: `services:
+  {{NAME}}:
+    image: ghcr.io/umami-software/umami:postgresql-latest
+    ports:
+      - "{{PORT}}:3000"
+    environment:
+      DATABASE_URL: postgresql://umami:{{PASSWORD}}@db:5432/umami
+      DATABASE_TYPE: postgresql
+      APP_SECRET: "{{SECRET}}"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: umami
+      POSTGRES_USER: umami
+      POSTGRES_PASSWORD: {{PASSWORD}}
+    volumes:
+      - {{NAME}}-db:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U umami"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  {{NAME}}-db:
+`,
+  },
+  {
+    id: "wordpress",
+    name: "WordPress",
+    mono: "Wp",
+    color: "#21759b",
+    category: "Web",
+    description: "Le CMS le plus utilisé, avec sa base de données.",
+    image: "wordpress:latest",
+    ports: [{ container: 80, defaultHost: 8084 }],
+    env: [{ key: "PASSWORD", generate: true, label: "Mot de passe base de données" }],
+    volumes: [],
+    compose: `services:
+  {{NAME}}:
+    image: wordpress:latest
+    ports:
+      - "{{PORT}}:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: {{PASSWORD}}
+      WORDPRESS_DB_NAME: wordpress
+    depends_on:
+      - db
+    volumes:
+      - {{NAME}}-data:/var/www/html
+    restart: unless-stopped
+  db:
+    image: mariadb:11
+    environment:
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: {{PASSWORD}}
+      MYSQL_RANDOM_ROOT_PASSWORD: "1"
+    volumes:
+      - {{NAME}}-db:/var/lib/mysql
+    restart: unless-stopped
+volumes:
+  {{NAME}}-data:
+  {{NAME}}-db:
+`,
   },
   {
     id: "vaultwarden",

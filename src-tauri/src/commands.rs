@@ -9,6 +9,7 @@ use serde::Deserialize;
 use tauri::{AppHandle, Manager};
 
 use crate::caddy::{self, CaddyInfo, CaddyRoute, RouteHealth};
+use crate::compose;
 use crate::docker::{self, DeployConfig, DockerStatus};
 use crate::files::{self, DirListing, FilePreview};
 use crate::hardening::{self, HardenInput, HardeningReport};
@@ -479,6 +480,49 @@ pub async fn deploy_app(
         .map_err(|e| e.to_string())?;
     if out.result.exit_code == 0 {
         Ok(out.result.stdout.trim().to_string())
+    } else {
+        Err(out.result.stderr.trim().to_string())
+    }
+}
+
+/// Déploie une stack multi-conteneurs (docker compose up -d).
+#[tauri::command]
+pub async fn compose_up(
+    app: AppHandle,
+    id: String,
+    name: String,
+    yaml: String,
+    password: Option<String>,
+) -> Result<(), String> {
+    let cmd = compose::up_cmd(&name, &yaml).ok_or_else(|| "Nom de stack invalide".to_string())?;
+    let dir = data_dir(&app)?;
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
+    let out = ssh::exec(&profile, &cmd, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    if out.result.exit_code == 0 {
+        Ok(())
+    } else {
+        Err(out.result.stderr.trim().to_string())
+    }
+}
+
+/// Arrête et retire une stack (docker compose down).
+#[tauri::command]
+pub async fn compose_down(
+    app: AppHandle,
+    id: String,
+    name: String,
+    password: Option<String>,
+) -> Result<(), String> {
+    let cmd = compose::down_cmd(&name).ok_or_else(|| "Nom de stack invalide".to_string())?;
+    let dir = data_dir(&app)?;
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
+    let out = ssh::exec(&profile, &cmd, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    if out.result.exit_code == 0 {
+        Ok(())
     } else {
         Err(out.result.stderr.trim().to_string())
     }
