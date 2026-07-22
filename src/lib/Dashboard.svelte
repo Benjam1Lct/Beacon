@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import { fly } from "svelte/transition";
   import { quintOut } from "svelte/easing";
   import Gauge from "$lib/Gauge.svelte";
@@ -19,11 +19,19 @@
     profile,
     password,
     onBack,
-  }: { profile: ProfileMeta; password?: string; onBack: () => void } = $props();
+    initial = null,
+    initialDocker = null,
+  }: {
+    profile: ProfileMeta;
+    password?: string;
+    onBack: () => void;
+    initial?: Metrics | null;
+    initialDocker?: import("$lib/types").DockerStatus | null;
+  } = $props();
 
-  let metrics = $state<Metrics | null>(null);
+  let metrics = $state<Metrics | null>(untrack(() => initial));
   let error = $state<string | null>(null);
-  let loading = $state(true);
+  let loading = $state(untrack(() => !initial));
 
   let prevNet: { rx: number; tx: number; t: number } | null = null;
   let rxRate = $state(0);
@@ -321,7 +329,7 @@
         </p>
       </section>
 
-      <Containers profileId={profile.id} {password} filter={search} />
+      <Containers profileId={profile.id} {password} filter={search} initial={initialDocker} />
     {/if}
   </main>
 </div>

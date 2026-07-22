@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import { fade, fly, scale, slide } from "svelte/transition";
   import { quintOut } from "svelte/easing";
   import Icon from "$lib/Icon.svelte";
@@ -10,7 +10,13 @@
     profileId,
     password,
     filter = "",
-  }: { profileId: string; password?: string; filter?: string } = $props();
+    initial = null,
+  }: {
+    profileId: string;
+    password?: string;
+    filter?: string;
+    initial?: DockerStatus | null;
+  } = $props();
 
   const matching = $derived.by(() => {
     const q = filter.trim().toLowerCase();
@@ -20,9 +26,9 @@
     );
   });
 
-  let status = $state<DockerStatus | null>(null);
+  let status = $state<DockerStatus | null>(untrack(() => initial));
   let error = $state<string | null>(null);
-  let loading = $state(true);
+  let loading = $state(untrack(() => !initial));
   let acting = $state(false);
 
   // Détail (popover)

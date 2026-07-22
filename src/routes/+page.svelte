@@ -5,8 +5,11 @@
   import { quintOut } from "svelte/easing";
   import Icon from "$lib/Icon.svelte";
   import Dashboard from "$lib/Dashboard.svelte";
+  import Connecting from "$lib/Connecting.svelte";
   import {
     deleteProfile,
+    dockerList,
+    fetchMetrics,
     hardenBootstrap,
     listProfiles,
     openSshTerminal,
@@ -14,6 +17,7 @@
     saveProfile,
     sshTestConnection,
   } from "$lib/api";
+  import type { DockerStatus, Metrics } from "$lib/types";
   import type {
     AuthInput,
     ExecOutcome,
@@ -27,6 +31,10 @@
 
   let activeProfile = $state<ProfileMeta | null>(null);
   let activePassword = $state<string | undefined>(undefined);
+  let connecting = $state(false);
+  let connectError = $state<string | null>(null);
+  let initialMetrics = $state<Metrics | null>(null);
+  let initialDocker = $state<DockerStatus | null>(null);
 
   let label = $state("");
   let host = $state("");
@@ -170,12 +178,28 @@
     return "check";
   }
 
-  function openDashboard(profile: ProfileMeta, pwd?: string) {
+  async function startConnect(profile: ProfileMeta, pwd?: string) {
     activeProfile = profile;
     activePassword = pwd;
     passwordPromptId = null;
     promptPassword = "";
-    view = "dashboard";
+    connecting = true;
+    connectError = null;
+    initialMetrics = null;
+    initialDocker = null;
+    try {
+      const [m, d] = await Promise.all([
+        fetchMetrics(profile.id, pwd),
+        dockerList(profile.id, pwd).catch(() => null),
+      ]);
+      initialMetrics = m;
+      initialDocker = d;
+      view = "dashboard";
+    } catch (e) {
+      connectError = String(e);
+    } finally {
+      connecting = false;
+    }
   }
 
   function onConnectClick(profile: ProfileMeta) {
@@ -183,14 +207,24 @@
       passwordPromptId = passwordPromptId === profile.id ? null : profile.id;
       promptPassword = "";
     } else {
-      openDashboard(profile);
+      startConnect(profile);
     }
+  }
+
+  function cancelConnect() {
+    connecting = false;
+    connectError = null;
+    activeProfile = null;
+    activePassword = undefined;
   }
 
   function backToList() {
     view = "list";
     activeProfile = null;
     activePassword = undefined;
+    connectError = null;
+    initialMetrics = null;
+    initialDocker = null;
     refresh();
   }
 
@@ -213,7 +247,20 @@
 </script>
 
 {#if view === "dashboard" && activeProfile}
-  <Dashboard profile={activeProfile} password={activePassword} onBack={backToList} />
+  <Dashboard
+    profile={activeProfile}
+    password={activePassword}
+    onBack={backToList}
+    initial={initialMetrics}
+    initialDocker={initialDocker}
+  />
+{:else if connecting || connectError}
+  <Connecting
+    label={activeProfile?.label ?? ""}
+    error={connectError}
+    onCancel={cancelConnect}
+    onRetry={() => activeProfile && startConnect(activeProfile, activePassword)}
+  />
 {:else}
   <main>
     <div class="shell">
@@ -285,7 +332,7 @@
                       transition:fly={{ y: -6, duration: 200, easing: quintOut }}
                       onsubmit={(e) => {
                         e.preventDefault();
-                        openDashboard(p, promptPassword);
+                        startConnect(p, promptPassword);
                       }}
                     >
                       <input
