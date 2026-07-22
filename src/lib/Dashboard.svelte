@@ -329,7 +329,7 @@
         </p>
       </section>
 
-      <Containers profileId={profile.id} {password} filter={search} initial={initialDocker} />
+      <Containers profileId={profile.id} {password} host={profile.host} filter={search} initial={initialDocker} />
     {/if}
   </main>
 </div>

@@ -2,6 +2,7 @@
   import { onDestroy, onMount, untrack } from "svelte";
   import { fade, fly, scale, slide } from "svelte/transition";
   import { quintOut } from "svelte/easing";
+  import { openUrl } from "@tauri-apps/plugin-opener";
   import Icon from "$lib/Icon.svelte";
   import { dockerAction, dockerList, dockerLogs } from "$lib/api";
   import type { Container, DockerStatus } from "$lib/types";
@@ -9,14 +10,26 @@
   let {
     profileId,
     password,
+    host = "",
     filter = "",
     initial = null,
   }: {
     profileId: string;
     password?: string;
+    host?: string;
     filter?: string;
     initial?: DockerStatus | null;
   } = $props();
+
+  /** Port hôte publié (premier trouvé) d'un conteneur, ou null. */
+  function webPort(c: Container): number | null {
+    const m = c.ports.match(/:(\d+)->/);
+    return m ? Number(m[1]) : null;
+  }
+  function openInBrowser(c: Container) {
+    const p = webPort(c);
+    if (p && host) openUrl(`http://${host}:${p}`).catch(() => {});
+  }
 
   const matching = $derived.by(() => {
     const q = filter.trim().toLowerCase();
@@ -420,6 +433,9 @@
           <button class="act start" onclick={() => act("start")} disabled={acting}><Icon name={acting ? "spinner" : "play"} size={16} spin={acting} /> Démarrer</button>
         {/if}
         <button class="act" class:active={logsOpen} onclick={toggleLogs}><Icon name="logs" size={16} /> Logs</button>
+        {#if selected.state === "running" && webPort(selected)}
+          <button class="act" onclick={() => openInBrowser(selected!)}><Icon name="globe" size={16} /> Ouvrir</button>
+        {/if}
       </div>
 
       {#if folders.length}
