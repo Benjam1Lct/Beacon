@@ -147,14 +147,20 @@
   function statusOf(r: Route): { kind: "ok" | "error" | "pending"; msg: string } {
     const h = health[r.domain];
     if (!h) return { kind: "pending", msg: "Non vérifié" };
-    if (!h.portOk) return { kind: "error", msg: `Rien n'écoute sur le port ${r.targetPort}.` };
-    if (r.ssl === "public" && !h.dnsOk) {
-      return {
-        kind: "error",
-        msg: `Le domaine ne pointe pas vers ce serveur${h.serverIp ? ` (attendu ${h.serverIp})` : ""}.`,
-      };
+    if (h.reachable) {
+      if (r.ssl === "public" && !h.dnsOk) {
+        return {
+          kind: "pending",
+          msg: `En ligne, mais le DNS ne pointe pas encore ici${h.serverIp ? ` (attendu ${h.serverIp})` : ""}.`,
+        };
+      }
+      return { kind: "ok", msg: `En ligne${h.httpCode ? ` (HTTP ${h.httpCode})` : ""}` };
     }
-    return { kind: "ok", msg: "En ligne" };
+    const code = h.httpCode;
+    if (code && code.startsWith("5")) {
+      return { kind: "error", msg: `Le service derrière ne répond pas (HTTP ${code}).` };
+    }
+    return { kind: "error", msg: "Injoignable via Caddy pour ce domaine." };
   }
 
   const cableColor = { ok: "#4ade80", error: "#f87171", pending: "#eab308" };

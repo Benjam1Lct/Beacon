@@ -272,6 +272,152 @@ pub fn parse_caddyfile(raw: &str) -> Vec<CaddyRoute> {
     routes
 }
 
+/// Domaines gérés par Beacon (repérés par les marqueurs) dans le texte du Caddyfile.
+fn managed_domains(text: &str) -> std::collections::HashSet<String> {
+    text.lines()
+        .filter_map(|l| {
+            l.trim()
+                .strip_prefix("# BEACON:")
+                .and_then(|s| s.strip_suffix(" START"))
+                .map(|d| d.trim().to_string())
+        })
+        .collect()
+}
+
+/// Extrait (domaine, port) depuis la config JSON réellement chargée par Caddy (imports inclus).
+fn extract_json(raw: &str) -> Option<Vec<(String, u16)>> {
+    let v: serde_json::Value = serde_json::from_str(raw.trim()).ok()?;
+    let servers = v.pointer("/apps/http/servers")?.as_object()?;
+    let mut out = Vec::new();
+    for srv in servers.values() {
+        if let Some(routes) = srv.get("routes").and_then(|r| r.as_array()) {
+            walk_json_routes(routes, &mut out);
+        }
+    }
+    Some(out)
+}
+
+fn walk_json_routes(routes: &[serde_json::Value], out: &mut Vec<(String, u16)>) {
+    for route in routes {
+        let hosts: Vec<String> = route
+            .get("match")
+            .and_then(|m| m.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m.get("host").and_then(|h| h.as_array()))
+                    .flatten()
+                    .filter_map(|h| h.as_str())
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let port = route
+            .get("handle")
+            .and_then(find_dial)
+            .and_then(|d| d.rsplit(':').next().and_then(|p| p.parse::<u16>().ok()))
+            .unwrap_or(0);
+        for h in &hosts {
+            if h.contains('.') {
+                out.push((h.clone(), port));
+            }
+        }
+        if let Some(handle) = route.get("handle").and_then(|h| h.as_array()) {
+            for handler in handle {
+                if handler.get("handler").and_then(|x| x.as_str()) == Some("subroute") {
+                    if let Some(sub) = handler.get("routes").and_then(|r| r.as_array()) {
+                        walk_json_routes(sub, out);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn find_dial(handle: &serde_json::Value) -> Option<String> {
+    for h in handle.as_array()? {
+        match h.get("handler").and_then(|x| x.as_str()) {
+            Some("reverse_proxy") => {
+                if let Some(dial) = h
+                    .get("upstreams")
+                    .and_then(|u| u.as_array())
+                    .and_then(|a| a.first())
+                    .and_then(|u| u.get("dial"))
+                    .and_then(|d| d.as_str())
+                {
+                    return Some(dial.to_string());
+                }
+            }
+            Some("subroute") => {
+                if let Some(routes) = h.get("routes").and_then(|r| r.as_array()) {
+                    for r in routes {
+                        if let Some(d) = r.get("handle").and_then(find_dial) {
+                            return Some(d);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Commande qui renvoie le Caddyfile (marqueurs) + la config JSON chargée (tous les domaines).
+pub fn read_all_cmd(info: &CaddyInfo) -> String {
+    let text = read_config_cmd(info);
+    let json = if info.mode == "docker" {
+        match &info.container {
+            Some(cont) => {
+                let dst = info
+                    .config_dst
+                    .clone()
+                    .unwrap_or_else(|| "/etc/caddy/Caddyfile".into());
+                format!(
+                    "docker exec {c} sh -c 'wget -qO- http://localhost:2019/config/ 2>/dev/null || caddy adapt --config {d} 2>/dev/null'",
+                    c = quote(cont),
+                    d = dst
+                )
+            }
+            None => "true".to_string(),
+        }
+    } else {
+        "sh -c 'wget -qO- http://localhost:2019/config/ 2>/dev/null || caddy adapt --config /etc/caddy/Caddyfile 2>/dev/null'".to_string()
+    };
+    format!("echo '===TEXT==='\n{text}\necho '===JSON==='\n{json}")
+}
+
+/// Parse la sortie de `read_all_cmd` : domaines depuis le JSON (robuste), managed depuis le texte.
+pub fn parse_routes(raw: &str) -> Vec<CaddyRoute> {
+    let (text, json) = match raw.split_once("===JSON===") {
+        Some((t, j)) => (t.replace("===TEXT===", ""), j.to_string()),
+        None => (raw.to_string(), String::new()),
+    };
+    let managed = managed_domains(&text);
+
+    if let Some(list) = extract_json(&json) {
+        if !list.is_empty() {
+            let mut seen = std::collections::HashSet::new();
+            return list
+                .into_iter()
+                .filter(|(d, _)| seen.insert(d.clone()))
+                .map(|(domain, target_port)| CaddyRoute {
+                    managed: managed.contains(&domain),
+                    domain,
+                    target_port,
+                    ssl: "public".into(),
+                })
+                .collect();
+        }
+    }
+
+    // Repli : parsing texte du Caddyfile.
+    let mut routes = parse_caddyfile(&text);
+    for r in &mut routes {
+        r.managed = managed.contains(&r.domain);
+    }
+    routes
+}
+
 /// Fichier Caddyfile à éditer (hôte) + commande de reload, selon le mode.
 fn target_and_reload(info: &CaddyInfo) -> Result<(String, String), String> {
     if info.mode == "docker" {
@@ -401,12 +547,16 @@ pub const INSTALL_CMD: &str = "set -e\n\
 pub struct RouteHealth {
     pub domain: String,
     pub dns_ok: bool,
-    pub port_ok: bool,
+    /// Le domaine répond via Caddy (test HTTPS local avec SNI).
+    pub reachable: bool,
+    pub http_code: String,
     pub resolved_ip: String,
     pub server_ip: String,
 }
 
-/// Construit la commande de diagnostic (IP publique + DNS/port par domaine).
+/// Diagnostic : IP publique + (DNS pointe ici ?) + le domaine répond-il via Caddy ?
+/// On teste `https://<domaine>` en forçant la résolution vers 127.0.0.1 (le Caddy local),
+/// ce qui reflète la vraie disponibilité quel que soit l'upstream (conteneur, service…).
 pub fn health_cmd(routes: &[CaddyRoute]) -> String {
     let mut c = String::from(
         "PUBIP=$(curl -s --max-time 4 https://api.ipify.org 2>/dev/null || curl -s --max-time 4 ifconfig.me 2>/dev/null)\n\
@@ -419,12 +569,12 @@ pub fn health_cmd(routes: &[CaddyRoute]) -> String {
         c.push_str("echo '===R==='\n");
         c.push_str(&format!("echo \"DOMAIN {}\"\n", r.domain));
         c.push_str(&format!(
-            "echo \"DNS $(getent hosts '{}' 2>/dev/null | awk '{{print $1}}' | head -1)\"\n",
-            r.domain
+            "echo \"DNS $(getent hosts '{d}' 2>/dev/null | awk '{{print $1}}' | head -1)\"\n",
+            d = r.domain
         ));
         c.push_str(&format!(
-            "curl -sf -o /dev/null --max-time 3 http://127.0.0.1:{p} && echo 'PORT ok' || echo 'PORT down'\n",
-            p = r.target_port
+            "echo \"CODE $(curl -sk -o /dev/null -w '%{{http_code}}' --max-time 6 --resolve '{d}:443:127.0.0.1' 'https://{d}' 2>/dev/null)\"\n",
+            d = r.domain
         ));
     }
     c
@@ -447,7 +597,8 @@ pub fn parse_health(raw: &str) -> Vec<RouteHealth> {
             cur = Some(RouteHealth {
                 domain: String::new(),
                 dns_ok: false,
-                port_ok: false,
+                reachable: false,
+                http_code: String::new(),
                 resolved_ip: String::new(),
                 server_ip: server_ip.clone(),
             });
@@ -460,9 +611,14 @@ pub fn parse_health(raw: &str) -> Vec<RouteHealth> {
                 r.resolved_ip = ip.trim().to_string();
                 r.dns_ok = !r.resolved_ip.is_empty() && r.resolved_ip == server_ip;
             }
-        } else if l == "PORT ok" {
+        } else if let Some(code) = l.strip_prefix("CODE ") {
             if let Some(r) = cur.as_mut() {
-                r.port_ok = true;
+                let code = code.trim().to_string();
+                r.reachable = code
+                    .parse::<u32>()
+                    .map(|n| (200..500).contains(&n))
+                    .unwrap_or(false);
+                r.http_code = code;
             }
         }
     }

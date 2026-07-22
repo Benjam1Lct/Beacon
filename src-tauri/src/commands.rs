@@ -288,12 +288,12 @@ pub async fn read_routes(
     }
     let out = ssh::exec(
         &profile,
-        &caddy::read_config_cmd(&info),
+        &caddy::read_all_cmd(&info),
         meta.host_key_fp.as_deref(),
     )
     .await
     .map_err(|e| e.to_string())?;
-    Ok(caddy::parse_caddyfile(&out.result.stdout))
+    Ok(caddy::parse_routes(&out.result.stdout))
 }
 
 /// Ajoute une liaison Beacon (bloc encadré de marqueurs), sans réécrire tout le Caddyfile.

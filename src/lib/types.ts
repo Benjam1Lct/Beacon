@@ -132,7 +132,8 @@ export interface CaddyRoute {
 export interface RouteHealth {
   domain: string;
   dnsOk: boolean;
-  portOk: boolean;
+  reachable: boolean;
+  httpCode: string;
   resolvedIp: string;
   serverIp: string;
 }
