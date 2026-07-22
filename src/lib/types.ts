@@ -97,6 +97,15 @@ export interface DirListing {
   entries: DirEntry[];
 }
 
+export interface FilePreview {
+  kind: "text" | "image" | "binary";
+  name: string;
+  mime: string;
+  content: string;
+  size: number;
+  truncated: boolean;
+}
+
 export type SslMode = "public" | "local" | "none";
 export interface CaddyRoute {
   domain: string;

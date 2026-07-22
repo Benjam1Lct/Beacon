@@ -31,6 +31,7 @@ russh-keys = "0.45"
 async-trait = "0.1"
 thiserror = "1"
 uuid = { version = "1", features = ["v4"] }
+base64 = "0.22"
 
 # Keyring : stockage des secrets dans le trousseau natif de l'OS.
 # Backend spécifique par plateforme pour compiler sans dépendances système lourdes.

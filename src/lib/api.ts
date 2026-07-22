@@ -5,6 +5,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type {
   CaddyRoute,
   DirListing,
+  FilePreview,
   DockerStatus,
   ExecOutcome,
   HardenInput,
@@ -98,6 +99,11 @@ export function applyRoutes(id: string, routes: CaddyRoute[], password?: string)
 /** Liste un dossier distant (explorateur de fichiers). */
 export function listDir(id: string, path: string, password?: string): Promise<DirListing> {
   return invoke<DirListing>("list_dir", { id, path, password: password ?? null });
+}
+
+/** Lit un fichier distant pour aperçu (texte / image / binaire). */
+export function readFile(id: string, path: string, password?: string): Promise<FilePreview> {
+  return invoke<FilePreview>("read_file", { id, path, password: password ?? null });
 }
 
 /** Diagnostic des liaisons (DNS / port). */

@@ -3,8 +3,8 @@
   import { fade, scale } from "svelte/transition";
   import { quintOut } from "svelte/easing";
   import Icon from "$lib/Icon.svelte";
-  import { listDir } from "$lib/api";
-  import type { DirListing } from "$lib/types";
+  import { listDir, readFile } from "$lib/api";
+  import type { DirListing, FilePreview } from "$lib/types";
 
   let {
     profileId,
@@ -15,6 +15,47 @@
   let listing = $state<DirListing | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
+
+  let previewOpen = $state(false);
+  let preview = $state<FilePreview | null>(null);
+  let previewLoading = $state(false);
+  let previewErr = $state<string | null>(null);
+
+  function fmtSize(n: number): string {
+    const u = ["o", "Ko", "Mo", "Go"];
+    let i = 0;
+    let v = n;
+    while (v >= 1024 && i < u.length - 1) {
+      v /= 1024;
+      i++;
+    }
+    return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${u[i]}`;
+  }
+
+  function fullPath(name: string): string {
+    if (!listing) return name;
+    const base = listing.path === "/" ? "" : listing.path.replace(/\/$/, "");
+    return `${base}/${name}`;
+  }
+
+  async function openFile(name: string) {
+    previewOpen = true;
+    previewLoading = true;
+    preview = null;
+    previewErr = null;
+    try {
+      preview = await readFile(profileId, fullPath(name), password);
+    } catch (e) {
+      previewErr = String(e);
+    } finally {
+      previewLoading = false;
+    }
+  }
+
+  function openEntry(name: string, isDir: boolean) {
+    if (isDir) navigate(fullPath(name));
+    else openFile(name);
+  }
 
   async function navigate(path: string) {
     loading = true;
@@ -34,12 +75,6 @@
     parts.pop();
     const par = parts.join("/");
     return par === "" ? "/" : par;
-  }
-
-  function openEntry(name: string, isDir: boolean) {
-    if (!isDir || !listing) return;
-    const base = listing.path === "/" ? "" : listing.path.replace(/\/$/, "");
-    navigate(`${base}/${name}`);
   }
 
   onMount(() => navigate("~"));
@@ -88,7 +123,14 @@
         <ul class="list">
           {#each listing.entries as e (e.name)}
             <li>
-              <button class="entry" class:dir={e.isDir} onclick={() => openEntry(e.name, e.isDir)}>
+              <button
+                class="entry"
+                class:dir={e.isDir}
+                ondblclick={() => openEntry(e.name, e.isDir)}
+                onkeydown={(ev) => {
+                  if (ev.key === "Enter") openEntry(e.name, e.isDir);
+                }}
+              >
                 <Icon name={e.isDir ? "folder" : "logs"} size={18} />
                 <span>{e.name}</span>
                 {#if e.isDir}<span class="chev"><Icon name="arrow" size={14} /></span>{/if}
@@ -99,9 +141,49 @@
       {/if}
     {/if}
 
-    <p class="note"><Icon name="lock" size={12} /> Lecture seule pour l'instant — l'envoi/téléchargement arrivera plus tard.</p>
+    <p class="note"><Icon name="lock" size={12} /> Double-clique un fichier pour l'aperçu. Lecture seule pour l'instant.</p>
   </div>
 </div>
+
+{#if previewOpen}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div
+    class="overlay preview-overlay"
+    role="presentation"
+    transition:fade={{ duration: 120 }}
+    onclick={(e) => {
+      if (e.target === e.currentTarget) previewOpen = false;
+    }}
+  >
+    <div class="preview" role="dialog" aria-modal="true" transition:scale={{ duration: 180, start: 0.97, easing: quintOut }}>
+      <div class="phead">
+        <Icon name={preview?.kind === "image" ? "folder" : "logs"} size={16} />
+        <strong>{preview?.name ?? "…"}</strong>
+        {#if preview}<span class="psize">{fmtSize(preview.size)}</span>{/if}
+        <button class="icon-btn" onclick={() => (previewOpen = false)}><Icon name="close" size={18} /></button>
+      </div>
+
+      <div class="pbody">
+        {#if previewLoading}
+          <div class="state"><Icon name="spinner" size={22} spin /> Ouverture…</div>
+        {:else if previewErr}
+          <div class="state err"><Icon name="alert" size={18} /> {previewErr}</div>
+        {:else if preview?.kind === "image"}
+          <img class="pimg" src={`data:${preview.mime};base64,${preview.content}`} alt={preview.name} />
+        {:else if preview?.kind === "text"}
+          <pre class="ptext">{preview.content}</pre>
+          {#if preview.truncated}<p class="trunc">Fichier tronqué à 5 Mo pour l'aperçu.</p>{/if}
+        {:else if preview?.kind === "binary"}
+          <div class="state">
+            <Icon name="lock" size={26} />
+            <p>Aperçu impossible (fichier binaire).</p>
+            {#if preview}<span class="muted">{fmtSize(preview.size)}</span>{/if}
+          </div>
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .overlay {
@@ -256,5 +338,73 @@
     margin: 0.9rem 0 0;
     font-size: 0.74rem;
     color: rgba(255, 255, 255, 0.4);
+  }
+
+  .preview-overlay {
+    z-index: 70;
+  }
+  .preview {
+    width: 100%;
+    max-width: 820px;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    border-radius: 18px;
+    background: rgba(20, 20, 23, 0.97);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7);
+    color: #e7ecf3;
+    overflow: hidden;
+  }
+  .phead {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.9rem 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .phead strong {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.92rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .psize {
+    font-size: 0.76rem;
+    color: rgba(255, 255, 255, 0.4);
+  }
+  .pbody {
+    overflow: auto;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    min-height: 120px;
+  }
+  .pimg {
+    max-width: 100%;
+    max-height: 72vh;
+    margin: auto;
+    border-radius: 8px;
+    background: repeating-conic-gradient(#2a2a2e 0% 25%, #232327 0% 50%) 50% / 20px 20px;
+  }
+  .ptext {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: ui-monospace, "Cascadia Code", monospace;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.85);
+  }
+  .trunc {
+    margin: 0.6rem 0 0;
+    font-size: 0.74rem;
+    color: #eab308;
+  }
+  .muted {
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.8rem;
   }
 </style>

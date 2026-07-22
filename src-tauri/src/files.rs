@@ -1,6 +1,9 @@
 //! Explorateur de fichiers distant (lecture seule) via SSH.
 
+use base64::Engine as _;
 use serde::Serialize;
+
+const MAX_PREVIEW: u64 = 5 * 1024 * 1024;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,4 +73,108 @@ pub fn parse(raw: &str) -> DirListing {
         }
     }
     DirListing { path, entries }
+}
+
+// ---- Aperçu de fichier -----------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilePreview {
+    pub kind: String, // "text" | "image" | "binary"
+    pub name: String,
+    pub mime: String,
+    pub content: String, // texte, ou base64 pour une image
+    pub size: u64,
+    pub truncated: bool,
+}
+
+fn image_mime(name: &str) -> Option<&'static str> {
+    let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        "svg" => Some("image/svg+xml"),
+        "bmp" => Some("image/bmp"),
+        "ico" => Some("image/x-icon"),
+        _ => None,
+    }
+}
+
+/// Commande de lecture : taille + contenu (base64, tronqué à 5 Mo) pour transfert sûr.
+pub fn read_cmd(path: &str) -> String {
+    let q = format!("'{}'", path.replace('\'', "'\\''"));
+    format!(
+        "echo '===SIZE==='\n\
+         stat -c %s -- {q} 2>/dev/null || echo 0\n\
+         echo '===B64==='\n\
+         head -c 5242880 -- {q} 2>/dev/null | base64"
+    )
+}
+
+/// Parse la sortie de `read_cmd` et décide du type (image / texte / binaire).
+pub fn parse_preview(raw: &str, name: &str) -> FilePreview {
+    let mut section = "";
+    let mut size: u64 = 0;
+    let mut b64 = String::new();
+    for line in raw.lines() {
+        match line.trim() {
+            "===SIZE===" => {
+                section = "S";
+                continue;
+            }
+            "===B64===" => {
+                section = "B";
+                continue;
+            }
+            _ => {}
+        }
+        match section {
+            "S" => {
+                if size == 0 {
+                    size = line.trim().parse().unwrap_or(0);
+                }
+            }
+            "B" => b64.push_str(line.trim()),
+            _ => {}
+        }
+    }
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64.as_bytes())
+        .unwrap_or_default();
+    let truncated = size > MAX_PREVIEW;
+
+    if let Some(mime) = image_mime(name) {
+        let content = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        return FilePreview {
+            kind: "image".into(),
+            name: name.into(),
+            mime: mime.into(),
+            content,
+            size,
+            truncated,
+        };
+    }
+
+    if !bytes.contains(&0) && std::str::from_utf8(&bytes).is_ok() {
+        FilePreview {
+            kind: "text".into(),
+            name: name.into(),
+            mime: "text/plain".into(),
+            content: String::from_utf8_lossy(&bytes).into_owned(),
+            size,
+            truncated,
+        }
+    } else {
+        FilePreview {
+            kind: "binary".into(),
+            name: name.into(),
+            mime: "application/octet-stream".into(),
+            content: String::new(),
+            size,
+            truncated,
+        }
+    }
 }

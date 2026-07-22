@@ -10,7 +10,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::caddy::{self, CaddyRoute, RouteHealth};
 use crate::docker::{self, DeployConfig, DockerStatus};
-use crate::files::{self, DirListing};
+use crate::files::{self, DirListing, FilePreview};
 use crate::hardening::{self, HardenInput, HardeningReport};
 use crate::monitor::{self, Metrics};
 use crate::secrets::{self, KeySecret};
@@ -197,6 +197,27 @@ pub async fn list_dir(
     .await
     .map_err(|e| e.to_string())?;
     Ok(files::parse(&out.result.stdout))
+}
+
+/// Lit un fichier distant pour aperçu (texte / image / binaire).
+#[tauri::command]
+pub async fn read_file(
+    app: AppHandle,
+    id: String,
+    path: String,
+    password: Option<String>,
+) -> Result<FilePreview, String> {
+    let dir = data_dir(&app)?;
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
+    let out = ssh::exec(
+        &profile,
+        &files::read_cmd(&path),
+        meta.host_key_fp.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let name = path.rsplit('/').next().unwrap_or(&path).to_string();
+    Ok(files::parse_preview(&out.result.stdout, &name))
 }
 
 /// Indique si Caddy est installé sur le serveur.

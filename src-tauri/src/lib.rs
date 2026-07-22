@@ -31,6 +31,7 @@ pub fn run() {
             commands::apply_routes,
             commands::check_routes,
             commands::list_dir,
+            commands::read_file,
             commands::open_ssh_terminal,
             commands::harden_bootstrap,
         ])
