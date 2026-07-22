@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { fade, fly, scale, slide } from "svelte/transition";
   import { quintOut } from "svelte/easing";
+  import { openUrl } from "@tauri-apps/plugin-opener";
   import Icon from "$lib/Icon.svelte";
   import {
     addRoute as apiAddRoute,
@@ -47,6 +48,11 @@
   let fContainer = $state("");
   let fPort = $state<number | null>(null);
   let fSsl = $state<SslMode>("public");
+
+  function openDomain(r: Route) {
+    const scheme = r.ssl === "none" ? "http" : "https";
+    openUrl(`${scheme}://${r.domain}`).catch(() => {});
+  }
 
   function parsePort(ports: string): number | null {
     const m = ports.match(/:(\d+)->/);
@@ -264,7 +270,9 @@
             {@const st = statusOf(r)}
             <div class="route" transition:slide={{ duration: 200 }}>
               <div class="node domain">
-                <span class="node-ic"><Icon name="globe" size={16} /></span>
+                <button class="node-ic link" title="Ouvrir {r.domain} dans le navigateur" onclick={() => openDomain(r)}>
+                  <Icon name="globe" size={16} />
+                </button>
                 <div><strong>{r.domain}</strong><span>{r.ssl === "public" ? "HTTPS" : r.ssl === "local" ? "Local" : "HTTP"}</span></div>
               </div>
 
@@ -487,6 +495,8 @@
     width: 30px;
     height: 30px;
     flex-shrink: 0;
+    border: none;
+    padding: 0;
     border-radius: 9px;
     background: rgba(255, 255, 255, 0.07);
     color: #cdd6e6;
@@ -494,6 +504,15 @@
   .node.domain .node-ic {
     background: rgba(139, 147, 255, 0.18);
     color: #a5b4fc;
+  }
+  .node-ic.link {
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease;
+  }
+  .node-ic.link:hover {
+    transform: scale(1.1);
+    background: rgba(139, 147, 255, 0.3);
+    color: #fff;
   }
   .node.target {
     justify-content: flex-end;
