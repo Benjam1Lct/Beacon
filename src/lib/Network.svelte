@@ -236,7 +236,7 @@
             {@const st = statusOf(r)}
             <div class="route" transition:slide={{ duration: 200 }}>
               <div class="node domain">
-                <Icon name="link" size={15} />
+                <span class="node-ic"><Icon name="globe" size={16} /></span>
                 <div><strong>{r.domain}</strong><span>{r.ssl === "public" ? "HTTPS" : r.ssl === "local" ? "Local" : "HTTP"}</span></div>
               </div>
 
@@ -248,7 +248,7 @@
               </div>
 
               <div class="node target">
-                <Icon name="server" size={15} />
+                <span class="node-ic"><Icon name="server" size={15} /></span>
                 <div><strong>{r.container || "127.0.0.1"}</strong><span>port {r.targetPort}</span></div>
               </div>
 
@@ -451,9 +451,26 @@
     font-size: 0.72rem;
     color: rgba(255, 255, 255, 0.4);
   }
+  .node-ic {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.07);
+    color: #cdd6e6;
+  }
+  .node.domain .node-ic {
+    background: rgba(139, 147, 255, 0.18);
+    color: #a5b4fc;
+  }
   .node.target {
     justify-content: flex-end;
     text-align: right;
+  }
+  .node.target .node-ic {
+    order: 2;
   }
   .node.target div {
     align-items: flex-end;
