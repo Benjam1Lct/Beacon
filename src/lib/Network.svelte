@@ -91,10 +91,32 @@
       const map: Record<string, RouteHealth> = {};
       for (const h of res) map[h.domain] = h;
       health = map;
+      saveCache();
     } catch {
       /* garde l'état précédent */
     } finally {
       checking = false;
+    }
+  }
+
+  const CK = $derived(`beacon.net.${profileId}`);
+  function saveCache() {
+    try {
+      localStorage.setItem(CK, JSON.stringify({ info, routes, health }));
+    } catch {
+      /* ignore */
+    }
+  }
+  function loadCache() {
+    try {
+      const c = JSON.parse(localStorage.getItem(CK) || "null");
+      if (c && Array.isArray(c.routes)) {
+        info = c.info ?? info;
+        routes = c.routes;
+        health = c.health ?? {};
+      }
+    } catch {
+      /* ignore */
     }
   }
 
@@ -144,13 +166,13 @@
     }
   }
 
-  function statusOf(r: Route): { kind: "ok" | "error" | "pending"; msg: string } {
+  function statusOf(r: Route): { kind: "ok" | "error" | "warn" | "checking"; msg: string } {
     const h = health[r.domain];
-    if (!h) return { kind: "pending", msg: "Non vérifié" };
+    if (!h) return { kind: "checking", msg: "Vérification…" };
     if (h.reachable) {
       if (r.ssl === "public" && !h.dnsOk) {
         return {
-          kind: "pending",
+          kind: "warn",
           msg: `En ligne, mais le DNS ne pointe pas encore ici${h.serverIp ? ` (attendu ${h.serverIp})` : ""}.`,
         };
       }
@@ -163,9 +185,11 @@
     return { kind: "error", msg: "Injoignable via Caddy pour ce domaine." };
   }
 
-  const cableColor = { ok: "#4ade80", error: "#f87171", pending: "#eab308" };
+  const cableColor = { ok: "#4ade80", error: "#f87171", warn: "#eab308", checking: "#6b7280" };
 
   onMount(async () => {
+    loadCache(); // affichage instantané du dernier état connu (vert direct)
+
     info = await caddyStatus(profileId, password).catch(
       () => ({ installed: false, mode: "none", container: null, configSrc: null, configDst: null }) as CaddyInfo,
     );
@@ -177,7 +201,8 @@
     } catch {
       containers = [];
     }
-    check();
+    await check();
+    saveCache();
   });
 </script>
 
@@ -260,6 +285,8 @@
 
               {#if st.kind === "error"}
                 <div class="route-msg err"><Icon name="alert" size={13} /> {st.msg}</div>
+              {:else if st.kind === "warn"}
+                <div class="route-msg warn"><Icon name="alert" size={13} /> {st.msg}</div>
               {:else if st.kind === "ok"}
                 <div class="route-msg ok"><Icon name="check" size={13} /> {st.msg}</div>
               {/if}
@@ -522,6 +549,9 @@
   }
   .route-msg.err {
     color: #fca5a5;
+  }
+  .route-msg.warn {
+    color: #fcd34d;
   }
   .route-msg.ok {
     color: #86efac;
