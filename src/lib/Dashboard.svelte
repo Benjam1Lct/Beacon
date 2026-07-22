@@ -11,6 +11,7 @@
   import Network from "$lib/Network.svelte";
   import Files from "$lib/Files.svelte";
   import Settings from "$lib/Settings.svelte";
+  import ProcessManager from "$lib/ProcessManager.svelte";
   import { fetchMetrics, openSshTerminal } from "$lib/api";
   import type { Metrics, ProfileMeta } from "$lib/types";
 
@@ -36,6 +37,7 @@
   let networkOpen = $state(false);
   let filesOpen = $state(false);
   let settingsOpen = $state(false);
+  let procOpen = $state(false);
 
   async function openTerminal() {
     try {
@@ -177,7 +179,10 @@
 
     <!-- Système -->
     <div class="w" in:fly={{ x: -16, duration: 420, delay: 70, easing: quintOut }}>
-      <div class="w-head"><span>Système</span></div>
+      <div class="w-head">
+        <span>Système</span>
+        <button class="w-more" title="Processus" onclick={() => (procOpen = true)}><Icon name="grid" size={15} /></button>
+      </div>
       {#if metrics}
         <div class="sys-gauges">
           <div class="mini-gauge">
@@ -345,6 +350,10 @@
   />
 {/if}
 
+{#if procOpen}
+  <ProcessManager profileId={profile.id} {password} onClose={() => (procOpen = false)} />
+{/if}
+
 <style>
   .zos {
     height: 100vh;
@@ -412,6 +421,21 @@
     color: #aeb9d1;
     font-size: 0.82rem;
     margin-bottom: 0.7rem;
+  }
+  .w-more {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #cdd6e6;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .w-more:hover {
+    background: rgba(255, 255, 255, 0.14);
   }
   .w-empty {
     display: grid;

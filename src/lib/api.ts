@@ -12,6 +12,7 @@ import type {
   HardenInput,
   HardeningReport,
   Metrics,
+  Process,
   ProfileMeta,
   RouteHealth,
   SaveProfileInput,
@@ -105,6 +106,11 @@ export function listDir(id: string, path: string, password?: string): Promise<Di
 /** Lit un fichier distant pour aperçu (texte / image / binaire). */
 export function readFile(id: string, path: string, password?: string): Promise<FilePreview> {
   return invoke<FilePreview>("read_file", { id, path, password: password ?? null });
+}
+
+/** Liste les processus du serveur (gestionnaire de tâches). */
+export function listProcesses(id: string, password?: string): Promise<Process[]> {
+  return invoke<Process[]>("list_processes", { id, password: password ?? null });
 }
 
 /** Diagnostic des liaisons (DNS / port). */

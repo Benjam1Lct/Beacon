@@ -13,6 +13,7 @@ use crate::docker::{self, DeployConfig, DockerStatus};
 use crate::files::{self, DirListing, FilePreview};
 use crate::hardening::{self, HardenInput, HardeningReport};
 use crate::monitor::{self, Metrics};
+use crate::procs::{self, Process};
 use crate::secrets::{self, KeySecret};
 use crate::ssh::{self, AuthInput, ExecOutcome, SshProfile};
 use crate::store::{self, AuthKind, ProfileMeta};
@@ -177,6 +178,21 @@ pub async fn fetch_metrics(
         .await
         .map_err(|e| e.to_string())?;
     monitor::parse(&out.result.stdout)
+}
+
+/// Liste les processus du serveur (gestionnaire de tâches, top par CPU).
+#[tauri::command]
+pub async fn list_processes(
+    app: AppHandle,
+    id: String,
+    password: Option<String>,
+) -> Result<Vec<Process>, String> {
+    let dir = data_dir(&app)?;
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
+    let out = ssh::exec(&profile, procs::LIST_CMD, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(procs::parse(&out.result.stdout))
 }
 
 /// Liste un dossier distant (explorateur de fichiers, lecture seule).

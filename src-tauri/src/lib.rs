@@ -4,6 +4,7 @@ mod docker;
 mod files;
 mod hardening;
 mod monitor;
+mod procs;
 mod secrets;
 mod ssh;
 mod store;
@@ -32,6 +33,7 @@ pub fn run() {
             commands::check_routes,
             commands::list_dir,
             commands::read_file,
+            commands::list_processes,
             commands::open_ssh_terminal,
             commands::harden_bootstrap,
         ])

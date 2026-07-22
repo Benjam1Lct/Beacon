@@ -169,15 +169,18 @@ pub fn apply_cmd(caddyfile: &str, info: &CaddyInfo) -> Result<String, String> {
     }
 }
 
-/// Détection + installation de Caddy (dépôt officiel, Debian/Ubuntu).
+/// Installe Caddy comme conteneur Docker (géré par Beacon), avec Caddyfile monté depuis l'hôte.
 pub const INSTALL_CMD: &str = "set -e\n\
-     if command -v caddy >/dev/null 2>&1; then echo ALREADY; exit 0; fi\n\
+     if ! command -v docker >/dev/null 2>&1; then echo NO_DOCKER; exit 1; fi\n\
      if [ \"$(id -u)\" = 0 ]; then SUDO=\"\"; else SUDO=\"sudo -n\"; fi\n\
-     $SUDO apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl gnupg\n\
-     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | $SUDO gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg\n\
-     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | $SUDO tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null\n\
-     $SUDO apt-get update\n\
-     $SUDO apt-get install -y caddy\n\
+     $SUDO mkdir -p /etc/caddy\n\
+     [ -f /etc/caddy/Caddyfile ] || echo '# Géré par Beacon' | $SUDO tee /etc/caddy/Caddyfile >/dev/null\n\
+     docker rm -f beacon-caddy 2>/dev/null || true\n\
+     docker run -d --name beacon-caddy --restart unless-stopped \
+       -p 80:80 -p 443:443 \
+       -v /etc/caddy/Caddyfile:/etc/caddy/Caddyfile \
+       -v beacon-caddy-data:/data -v beacon-caddy-config:/config \
+       caddy:2\n\
      echo DONE";
 
 #[derive(Debug, Serialize)]

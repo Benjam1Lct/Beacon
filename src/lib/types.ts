@@ -106,6 +106,14 @@ export interface FilePreview {
   truncated: boolean;
 }
 
+export interface Process {
+  pid: number;
+  user: string;
+  cpu: number;
+  mem: number;
+  command: string;
+}
+
 export interface CaddyInfo {
   installed: boolean;
   mode: "system" | "docker" | "none";
