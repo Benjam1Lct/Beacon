@@ -4,6 +4,7 @@
   import { quintOut } from "svelte/easing";
   import Icon from "$lib/Icon.svelte";
   import { composeUp, deployApp, dockerList, installDocker } from "$lib/api";
+  import { addApp } from "$lib/installed";
   import { CATALOG, genPassword, type AppTemplate, type DeployConfig } from "$lib/catalog";
 
   let {
@@ -103,6 +104,14 @@
         await deployApp(profileId, config, password);
         deployOk = `Conteneur « ${name} » déployé.`;
       }
+      addApp(profileId, {
+        id: crypto.randomUUID?.() ?? `a-${name}`,
+        catalogId: selected.id,
+        label: selected.name,
+        name,
+        port: cfgPorts[0] ?? null,
+        stack: !!selected.compose,
+      });
       onDeployed();
     } catch (e) {
       deployErr = String(e);

@@ -12,7 +12,9 @@
   import Files from "$lib/Files.svelte";
   import Settings from "$lib/Settings.svelte";
   import ProcessManager from "$lib/ProcessManager.svelte";
-  import { fetchMetrics, openSshTerminal } from "$lib/api";
+  import { openUrl } from "@tauri-apps/plugin-opener";
+  import { composeDown, fetchMetrics, openSshTerminal } from "$lib/api";
+  import { loadApps, removeApp, type InstalledApp } from "$lib/installed";
   import type { Metrics, ProfileMeta } from "$lib/types";
 
   let {
@@ -46,6 +48,24 @@
   let filesOpen = $state(false);
   let settingsOpen = $state(false);
   let procOpen = $state(false);
+
+  let installedApps = $state<InstalledApp[]>(untrack(() => loadApps(profile.id)));
+  const filteredInstalled = $derived(
+    search.trim()
+      ? installedApps.filter((a) => a.label.toLowerCase().includes(search.trim().toLowerCase()))
+      : installedApps,
+  );
+  function refreshApps() {
+    installedApps = loadApps(profile.id);
+  }
+  function openApp(a: InstalledApp) {
+    if (a.port) openUrl(`http://${profile.host}:${a.port}`).catch(() => {});
+  }
+  async function uninstallApp(a: InstalledApp) {
+    if (a.stack) await composeDown(profile.id, a.name, password).catch(() => {});
+    removeApp(profile.id, a.id);
+    refreshApps();
+  }
 
   async function openTerminal() {
     try {
@@ -323,6 +343,23 @@
               <span class="tile-label">{app.label}</span>
             </button>
           {/each}
+
+          {#each filteredInstalled as a (a.id)}
+            <div class="tile installed" in:fly={{ y: 16, duration: 340, easing: quintOut }}>
+              <button
+                class="tile-open"
+                type="button"
+                title={a.port ? `Ouvrir ${a.label}` : a.label}
+                onclick={() => openApp(a)}
+              >
+                <span class="tile-icon photo"><img src="/icons/{a.catalogId}.svg" alt={a.label} /></span>
+                <span class="tile-label">{a.label}</span>
+              </button>
+              <button class="tile-remove" title="Désinstaller" onclick={() => uninstallApp(a)}>
+                <Icon name="close" size={12} />
+              </button>
+            </div>
+          {/each}
         </div>
         <p class="apps-note">
           <Icon name="apps" size={14} /> Applications intégrées — l'App Store 1-clic arrive au prochain jalon.
@@ -335,7 +372,15 @@
 </div>
 
 {#if storeOpen}
-  <AppStore profileId={profile.id} {password} onClose={() => (storeOpen = false)} onDeployed={() => {}} />
+  <AppStore
+    profileId={profile.id}
+    {password}
+    onClose={() => {
+      storeOpen = false;
+      refreshApps();
+    }}
+    onDeployed={refreshApps}
+  />
 {/if}
 
 {#if networkOpen}
@@ -730,6 +775,58 @@
   }
   .tile:active .tile-icon {
     transform: translateY(-1px) scale(0.99);
+  }
+  .tile-icon.photo {
+    width: 60px;
+    height: 60px;
+    border-radius: 16px;
+    background: #fff;
+    padding: 11px;
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.4);
+  }
+  .tile-icon.photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  .tile.installed {
+    position: relative;
+  }
+  .tile-open {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    padding: 0;
+    color: inherit;
+    width: 100%;
+  }
+  .tile-remove {
+    position: absolute;
+    top: -6px;
+    right: 50%;
+    transform: translateX(34px);
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  .tile.installed:hover .tile-remove {
+    opacity: 1;
+  }
+  .tile-remove:hover {
+    background: rgba(220, 38, 38, 0.85);
   }
   .tile-label {
     font-size: 0.8rem;
