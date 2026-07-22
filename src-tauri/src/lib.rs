@@ -30,6 +30,8 @@ pub fn run() {
             commands::caddy_status,
             commands::install_caddy,
             commands::read_routes,
+            commands::add_route,
+            commands::remove_route,
             commands::apply_routes,
             commands::check_routes,
             commands::list_dir,

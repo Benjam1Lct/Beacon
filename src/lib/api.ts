@@ -98,6 +98,16 @@ export function readRoutes(id: string, password?: string): Promise<CaddyRoute[]>
   return invoke<CaddyRoute[]>("read_routes", { id, password: password ?? null });
 }
 
+/** Ajoute une liaison Beacon (non destructif : bloc marqué, sans réécrire tout le fichier). */
+export function addRoute(id: string, route: CaddyRoute, password?: string): Promise<void> {
+  return invoke<void>("add_route", { id, route, password: password ?? null });
+}
+
+/** Supprime uniquement le bloc Beacon d'un domaine. */
+export function removeRoute(id: string, domain: string, password?: string): Promise<void> {
+  return invoke<void>("remove_route", { id, domain, password: password ?? null });
+}
+
 /** Applique les liaisons reverse proxy (génère + recharge Caddy). */
 export function applyRoutes(id: string, routes: CaddyRoute[], password?: string): Promise<void> {
   return invoke<void>("apply_routes", { id, routes, password: password ?? null });

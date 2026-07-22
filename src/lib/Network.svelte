@@ -3,8 +3,16 @@
   import { fade, fly, scale, slide } from "svelte/transition";
   import { quintOut } from "svelte/easing";
   import Icon from "$lib/Icon.svelte";
-  import { applyRoutes, caddyStatus, checkRoutes, dockerList, installCaddy, readRoutes } from "$lib/api";
-  import type { CaddyInfo, CaddyRoute, Container, RouteHealth, SslMode } from "$lib/types";
+  import {
+    addRoute as apiAddRoute,
+    caddyStatus,
+    checkRoutes,
+    dockerList,
+    installCaddy,
+    readRoutes,
+    removeRoute as apiRemoveRoute,
+  } from "$lib/api";
+  import type { CaddyInfo, Container, RouteHealth, SslMode } from "$lib/types";
 
   let {
     profileId,
@@ -12,7 +20,14 @@
     onClose,
   }: { profileId: string; password?: string; onClose: () => void } = $props();
 
-  type Route = { id: string; domain: string; container: string; targetPort: number; ssl: SslMode };
+  type Route = {
+    id: string;
+    domain: string;
+    container: string;
+    targetPort: number;
+    ssl: SslMode;
+    managed: boolean;
+  };
 
   let info = $state<CaddyInfo | null>(null);
   const installed = $derived(info?.installed ?? null);
@@ -32,20 +47,6 @@
   let fPort = $state<number | null>(null);
   let fSsl = $state<SslMode>("public");
 
-  const RK = $derived(`beacon.routes.${profileId}`);
-
-  function toCaddy(r: Route): CaddyRoute {
-    return { domain: r.domain, targetPort: r.targetPort, ssl: r.ssl };
-  }
-
-  function persist() {
-    try {
-      localStorage.setItem(RK, JSON.stringify(routes));
-    } catch {
-      /* ignore */
-    }
-  }
-
   function parsePort(ports: string): number | null {
     const m = ports.match(/:(\d+)->/);
     return m ? Number(m[1]) : null;
@@ -59,15 +60,19 @@
     }
   }
 
-  async function apply() {
-    applying = true;
-    applyErr = null;
+  async function loadRoutes() {
     try {
-      await applyRoutes(profileId, routes.map(toCaddy), password);
-    } catch (e) {
-      applyErr = String(e);
-    } finally {
-      applying = false;
+      const sr = await readRoutes(profileId, password);
+      routes = sr.map((r) => ({
+        id: crypto.randomUUID?.() ?? `r-${r.domain}`,
+        domain: r.domain,
+        container: "",
+        targetPort: r.targetPort,
+        ssl: r.ssl,
+        managed: !!r.managed,
+      }));
+    } catch {
+      /* garde l'état */
     }
   }
 
@@ -78,7 +83,11 @@
     }
     checking = true;
     try {
-      const res = await checkRoutes(profileId, routes.map(toCaddy), password);
+      const res = await checkRoutes(
+        profileId,
+        routes.map((r) => ({ domain: r.domain, targetPort: r.targetPort, ssl: r.ssl })),
+        password,
+      );
       const map: Record<string, RouteHealth> = {};
       for (const h of res) map[h.domain] = h;
       health = map;
@@ -93,22 +102,33 @@
     e.preventDefault();
     const domain = fDomain.trim().toLowerCase();
     if (!domain || !fPort) return;
-    const id = crypto.randomUUID?.() ?? `r-${domain}`;
-    routes = [...routes, { id, domain, container: fContainer, targetPort: fPort, ssl: fSsl }];
-    persist();
-    fDomain = "";
-    fContainer = "";
-    fPort = null;
-    fSsl = "public";
-    await apply();
-    await check();
+    applying = true;
+    applyErr = null;
+    try {
+      await apiAddRoute(profileId, { domain, targetPort: fPort, ssl: fSsl, managed: true }, password);
+      fDomain = "";
+      fContainer = "";
+      fPort = null;
+      fSsl = "public";
+      await loadRoutes();
+      await check();
+    } catch (err) {
+      applyErr = String(err);
+    } finally {
+      applying = false;
+    }
   }
 
-  async function removeRoute(id: string) {
-    routes = routes.filter((r) => r.id !== id);
-    persist();
-    await apply();
-    await check();
+  async function removeRoute(r: Route) {
+    if (!r.managed) return;
+    applyErr = null;
+    try {
+      await apiRemoveRoute(profileId, r.domain, password);
+      await loadRoutes();
+      await check();
+    } catch (err) {
+      applyErr = String(err);
+    }
   }
 
   async function installCaddyNow() {
@@ -140,36 +160,10 @@
   const cableColor = { ok: "#4ade80", error: "#f87171", pending: "#eab308" };
 
   onMount(async () => {
-    let local: Route[] = [];
-    try {
-      local = JSON.parse(localStorage.getItem(RK) || "[]");
-    } catch {
-      local = [];
-    }
     info = await caddyStatus(profileId, password).catch(
       () => ({ installed: false, mode: "none", container: null, configSrc: null, configDst: null }) as CaddyInfo,
     );
-
-    // Importe les liaisons déjà présentes dans le Caddyfile du serveur.
-    let server: Route[] = [];
-    if (info?.installed) {
-      try {
-        const sr = await readRoutes(profileId, password);
-        server = sr.map((r) => ({
-          id: crypto.randomUUID?.() ?? `r-${r.domain}`,
-          domain: r.domain,
-          container: "",
-          targetPort: r.targetPort,
-          ssl: r.ssl,
-        }));
-      } catch {
-        server = [];
-      }
-    }
-    // Fusion : serveur en priorité, + liaisons locales dont le domaine n'existe pas déjà.
-    const domains = new Set(server.map((r) => r.domain));
-    routes = [...server, ...local.filter((r) => !domains.has(r.domain))];
-    persist();
+    if (info?.installed) await loadRoutes();
 
     try {
       const s = await dockerList(profileId, password);
@@ -252,7 +246,11 @@
                 <div><strong>{r.container || "127.0.0.1"}</strong><span>port {r.targetPort}</span></div>
               </div>
 
-              <button class="icon-btn danger" title="Supprimer" onclick={() => removeRoute(r.id)}><Icon name="trash" size={15} /></button>
+              {#if r.managed}
+                <button class="icon-btn danger" title="Supprimer" onclick={() => removeRoute(r)}><Icon name="trash" size={15} /></button>
+              {:else}
+                <span class="ext-badge" title="Liaison déjà présente dans ta config (non modifiée par Beacon)">détectée</span>
+              {/if}
 
               {#if st.kind === "error"}
                 <div class="route-msg err"><Icon name="alert" size={13} /> {st.msg}</div>
@@ -483,6 +481,15 @@
     box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.3);
   }
 
+  .ext-badge {
+    font-size: 0.66rem;
+    color: rgba(255, 255, 255, 0.45);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 0.2rem 0.4rem;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
   .route-msg {
     grid-column: 1 / -1;
     display: flex;

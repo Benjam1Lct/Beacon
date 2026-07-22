@@ -296,6 +296,59 @@ pub async fn read_routes(
     Ok(caddy::parse_caddyfile(&out.result.stdout))
 }
 
+/// Ajoute une liaison Beacon (bloc encadré de marqueurs), sans réécrire tout le Caddyfile.
+#[tauri::command]
+pub async fn add_route(
+    app: AppHandle,
+    id: String,
+    route: CaddyRoute,
+    password: Option<String>,
+) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
+    let info_out = ssh::exec(&profile, caddy::STATUS_CMD, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    let info = caddy::parse_info(&info_out.result.stdout);
+    let cmd = caddy::add_cmd(&info, &route)?;
+    let out = ssh::exec(&profile, &cmd, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    if out.result.stdout.contains("EXISTS") {
+        return Err("Ce domaine existe déjà dans la configuration Caddy.".into());
+    }
+    if out.result.exit_code == 0 {
+        Ok(())
+    } else {
+        Err(out.result.stderr.trim().to_string())
+    }
+}
+
+/// Supprime uniquement le bloc Beacon d'un domaine (les blocs de l'utilisateur restent intacts).
+#[tauri::command]
+pub async fn remove_route(
+    app: AppHandle,
+    id: String,
+    domain: String,
+    password: Option<String>,
+) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    let (profile, meta) = resolve_profile(&dir, &id, password)?;
+    let info_out = ssh::exec(&profile, caddy::STATUS_CMD, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    let info = caddy::parse_info(&info_out.result.stdout);
+    let cmd = caddy::remove_cmd(&info, &domain)?;
+    let out = ssh::exec(&profile, &cmd, meta.host_key_fp.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    if out.result.exit_code == 0 {
+        Ok(())
+    } else {
+        Err(out.result.stderr.trim().to_string())
+    }
+}
+
 /// Applique les liaisons reverse proxy : génère le Caddyfile, valide et recharge Caddy.
 #[tauri::command]
 pub async fn apply_routes(

@@ -127,6 +127,7 @@ export interface CaddyRoute {
   domain: string;
   targetPort: number;
   ssl: SslMode;
+  managed?: boolean;
 }
 export interface RouteHealth {
   domain: string;

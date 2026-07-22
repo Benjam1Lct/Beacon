@@ -12,6 +12,30 @@ pub struct CaddyRoute {
     pub target_port: u16,
     /// "public" (Let's Encrypt) | "local" (tls internal) | "none" (http)
     pub ssl: String,
+    /// true si le bloc est géré par Beacon (entre marqueurs) et donc supprimable.
+    #[serde(default)]
+    pub managed: bool,
+}
+
+/// Bloc site Caddyfile pour une liaison (sans marqueurs).
+fn block_for(r: &CaddyRoute) -> String {
+    match r.ssl.as_str() {
+        "local" => format!(
+            "{d} {{\n\ttls internal\n\treverse_proxy 127.0.0.1:{p}\n}}\n",
+            d = r.domain,
+            p = r.target_port
+        ),
+        "none" => format!(
+            "http://{d} {{\n\treverse_proxy 127.0.0.1:{p}\n}}\n",
+            d = r.domain,
+            p = r.target_port
+        ),
+        _ => format!(
+            "{d} {{\n\treverse_proxy 127.0.0.1:{p}\n}}\n",
+            d = r.domain,
+            p = r.target_port
+        ),
+    }
 }
 
 fn valid_domain(d: &str) -> bool {
@@ -160,9 +184,17 @@ pub fn parse_caddyfile(raw: &str) -> Vec<CaddyRoute> {
     let mut addr = String::new();
     let mut ssl = String::new();
     let mut port: Option<u16> = None;
+    let mut pending_managed = false;
+    let mut managed = false;
 
     for line in raw.lines() {
         let l = line.trim();
+        if l.starts_with("# BEACON:") {
+            if l.ends_with("START") {
+                pending_managed = true;
+            }
+            continue;
+        }
         if l.is_empty() || l.starts_with('#') {
             continue;
         }
@@ -178,7 +210,9 @@ pub fn parse_caddyfile(raw: &str) -> Vec<CaddyRoute> {
                         "public".into()
                     };
                     port = None;
+                    managed = pending_managed;
                 }
+                pending_managed = false;
             }
             depth += l.matches('{').count() as i32 - l.matches('}').count() as i32;
             continue;
@@ -228,12 +262,88 @@ pub fn parse_caddyfile(raw: &str) -> Vec<CaddyRoute> {
                     } else {
                         ssl.clone()
                     },
+                    managed,
                 });
             }
+            managed = false;
             addr.clear();
         }
     }
     routes
+}
+
+/// Fichier Caddyfile à éditer (hôte) + commande de reload, selon le mode.
+fn target_and_reload(info: &CaddyInfo) -> Result<(String, String), String> {
+    if info.mode == "docker" {
+        let src = info.config_src.clone().ok_or_else(|| {
+            "Le Caddyfile n'est pas monté depuis l'hôte : Beacon ne peut pas modifier la config sans risque.".to_string()
+        })?;
+        let cont = info
+            .container
+            .clone()
+            .ok_or_else(|| "Conteneur Caddy introuvable".to_string())?;
+        let dst = info
+            .config_dst
+            .clone()
+            .unwrap_or_else(|| "/etc/caddy/Caddyfile".into());
+        let reload = format!(
+            "docker exec {c} caddy reload --config {d} --adapter caddyfile 2>/dev/null || docker restart {c}",
+            c = quote(&cont),
+            d = quote(&dst)
+        );
+        Ok((src, reload))
+    } else {
+        let reload = "$SUDO caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile && ($SUDO systemctl reload caddy 2>/dev/null || $SUDO systemctl restart caddy)".to_string();
+        Ok(("/etc/caddy/Caddyfile".into(), reload))
+    }
+}
+
+/// Ajoute une liaison Beacon (bloc encadré de marqueurs) sans toucher au reste du fichier.
+pub fn add_cmd(info: &CaddyInfo, route: &CaddyRoute) -> Result<String, String> {
+    if !valid_domain(&route.domain) {
+        return Err("Domaine invalide".into());
+    }
+    let (file, reload) = target_and_reload(info)?;
+    let block = block_for(route);
+    Ok(format!(
+        "set -e\n\
+         if [ \"$(id -u)\" = 0 ]; then SUDO=\"\"; else SUDO=\"sudo -n\"; fi\n\
+         F={f}\n\
+         $SUDO mkdir -p \"$(dirname \"$F\")\"\n\
+         [ -f \"$F\" ] || : | $SUDO tee \"$F\" >/dev/null\n\
+         if $SUDO grep -qF {domain} \"$F\"; then echo EXISTS; exit 0; fi\n\
+         cat <<'BEACON_ADD_EOF' | $SUDO tee -a \"$F\" >/dev/null\n\
+         # BEACON:{d} START\n\
+         {block}# BEACON:{d} END\n\
+         BEACON_ADD_EOF\n\
+         {reload}\n\
+         echo DONE",
+        f = quote(&file),
+        domain = quote(&route.domain),
+        d = route.domain,
+        block = block,
+        reload = reload
+    ))
+}
+
+/// Supprime uniquement le bloc Beacon d'un domaine (n'affecte pas les blocs de l'utilisateur).
+pub fn remove_cmd(info: &CaddyInfo, domain: &str) -> Result<String, String> {
+    if !valid_domain(domain) {
+        return Err("Domaine invalide".into());
+    }
+    let (file, reload) = target_and_reload(info)?;
+    let esc = domain.replace('.', "\\.");
+    Ok(format!(
+        "set -e\n\
+         if [ \"$(id -u)\" = 0 ]; then SUDO=\"\"; else SUDO=\"sudo -n\"; fi\n\
+         F={f}\n\
+         $SUDO sed -i '/^# BEACON:{esc} START$/,/^# BEACON:{esc} END$/d' \"$F\"\n\
+         {reload}\n\
+         echo DONE",
+        f = quote(&file),
+        esc = esc,
+        reload = reload
+    ))
 }
 
 /// Commande d'application selon le mode (système ou Docker).
