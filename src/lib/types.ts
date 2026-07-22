@@ -98,7 +98,7 @@ export interface DirListing {
 }
 
 export interface FilePreview {
-  kind: "text" | "image" | "binary";
+  kind: "text" | "image" | "pdf" | "binary";
   name: string;
   mime: string;
   content: string;

@@ -31,6 +31,7 @@
   let netDown = $state<number[]>([]);
 
   let clock = $state(new Date());
+  let search = $state("");
   let storeOpen = $state(false);
   let networkOpen = $state(false);
   let filesOpen = $state(false);
@@ -150,6 +151,12 @@
     { key: "network", label: "Réseau" },
     { key: "settings", label: "Réglages" },
   ];
+
+  const filteredApps = $derived(
+    search.trim()
+      ? APPS.filter((a) => a.label.toLowerCase().includes(search.trim().toLowerCase()))
+      : APPS,
+  );
 </script>
 
 <div class="zos">
@@ -246,7 +253,8 @@
     <div class="topbar">
       <div class="searchbar">
         <Icon name="search" size={18} />
-        <input placeholder="Rechercher…" />
+        <input placeholder="Rechercher une app ou un conteneur…" bind:value={search} />
+        {#if search}<button class="clear-search" onclick={() => (search = "")}><Icon name="close" size={15} /></button>{/if}
       </div>
       <span class="live" class:on={!error && !loading}>
         <span class="dot"></span>{error ? "hors ligne" : loading ? "…" : "en direct"}
@@ -279,10 +287,12 @@
       <section class="apps-panel" in:fly={{ y: 14, duration: 360, easing: quintOut }}>
         <div class="apps-head">
           <h2>Applications</h2>
-          <button class="icon-btn" title="Ajouter (bientôt)" disabled><Icon name="plus" size={18} /></button>
+          <button class="icon-btn" title="Ouvrir l'App Store" onclick={() => (storeOpen = true)}>
+            <Icon name="plus" size={18} />
+          </button>
         </div>
         <div class="apps">
-          {#each APPS as app, i (app.label)}
+          {#each filteredApps as app, i (app.label)}
             <button
               class="tile"
               type="button"
@@ -306,7 +316,7 @@
         </p>
       </section>
 
-      <Containers profileId={profile.id} {password} />
+      <Containers profileId={profile.id} {password} filter={search} />
     {/if}
   </main>
 </div>
@@ -558,6 +568,20 @@
     color: #e7ecf3;
     font-size: 0.92rem;
     outline: none;
+  }
+  .clear-search {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #cdd6e6;
+    cursor: pointer;
+  }
+  .clear-search:hover {
+    background: rgba(255, 255, 255, 0.16);
   }
   .live {
     display: inline-flex;

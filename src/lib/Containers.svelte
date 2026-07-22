@@ -6,7 +6,19 @@
   import { dockerAction, dockerList, dockerLogs } from "$lib/api";
   import type { Container, DockerStatus } from "$lib/types";
 
-  let { profileId, password }: { profileId: string; password?: string } = $props();
+  let {
+    profileId,
+    password,
+    filter = "",
+  }: { profileId: string; password?: string; filter?: string } = $props();
+
+  const matching = $derived.by(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return null;
+    return (status?.containers ?? []).filter(
+      (c) => c.name.toLowerCase().includes(q) || c.image.toLowerCase().includes(q),
+    );
+  });
 
   let status = $state<DockerStatus | null>(null);
   let error = $state<string | null>(null);
@@ -254,6 +266,22 @@
     </div>
   {:else if status && status.containers.length === 0}
     <div class="state"><Icon name="server" size={26} /><p>Aucun conteneur.</p></div>
+  {:else if matching}
+    {#if matching.length === 0}
+      <div class="state"><Icon name="server" size={24} /><p>Aucun conteneur pour cette recherche.</p></div>
+    {:else}
+      <div class="tiles">
+        {#each matching as c (c.id)}
+          <button class="tile" onclick={() => open(c)} in:fly={{ y: 10, duration: 220, easing: quintOut }}>
+            <span class="tile-icon" class:on={c.state === "running"}>
+              <Icon name="server" size={26} />
+              <span class="dot" class:running={c.state === "running"}></span>
+            </span>
+            <span class="tile-name">{c.name}</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
   {:else if status}
     <p class="hint-drag">Astuce : glisse un conteneur sur un autre pour créer un dossier.</p>
     <div class="tiles">

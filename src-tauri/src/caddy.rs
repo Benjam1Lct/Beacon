@@ -78,8 +78,11 @@ pub const INSTALL_CMD: &str = "set -e\n\
      $SUDO apt-get install -y caddy\n\
      echo DONE";
 
-/// Vérifie que Caddy est présent.
-pub const STATUS_CMD: &str = "command -v caddy >/dev/null 2>&1 && echo INSTALLED || echo MISSING";
+/// Vérifie que Caddy est présent (PATH, chemins courants ou unité systemd).
+pub const STATUS_CMD: &str = "if command -v caddy >/dev/null 2>&1 \
+     || [ -x /usr/bin/caddy ] || [ -x /usr/local/bin/caddy ] \
+     || systemctl list-unit-files 2>/dev/null | grep -q '^caddy'; \
+     then echo INSTALLED; else echo MISSING; fi";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

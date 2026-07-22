@@ -170,6 +170,8 @@
           <div class="state err"><Icon name="alert" size={18} /> {previewErr}</div>
         {:else if preview?.kind === "image"}
           <img class="pimg" src={`data:${preview.mime};base64,${preview.content}`} alt={preview.name} />
+        {:else if preview?.kind === "pdf"}
+          <iframe class="ppdf" src={`data:application/pdf;base64,${preview.content}`} title={preview.name}></iframe>
         {:else if preview?.kind === "text"}
           <pre class="ptext">{preview.content}</pre>
           {#if preview.truncated}<p class="trunc">Fichier tronqué à 5 Mo pour l'aperçu.</p>{/if}
@@ -388,6 +390,13 @@
     margin: auto;
     border-radius: 8px;
     background: repeating-conic-gradient(#2a2a2e 0% 25%, #232327 0% 50%) 50% / 20px 20px;
+  }
+  .ppdf {
+    width: 100%;
+    height: 74vh;
+    border: none;
+    border-radius: 8px;
+    background: #fff;
   }
   .ptext {
     margin: 0;

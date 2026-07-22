@@ -158,6 +158,19 @@ pub fn parse_preview(raw: &str, name: &str) -> FilePreview {
         };
     }
 
+    let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    if ext == "pdf" {
+        let content = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        return FilePreview {
+            kind: "pdf".into(),
+            name: name.into(),
+            mime: "application/pdf".into(),
+            content,
+            size,
+            truncated,
+        };
+    }
+
     if !bytes.contains(&0) && std::str::from_utf8(&bytes).is_ok() {
         FilePreview {
             kind: "text".into(),
